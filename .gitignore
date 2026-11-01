@@ -1,0 +1,22 @@
+# Сборка
+/build/
+/dist/
+*.exe
+internal/webui/dist/*
+!internal/webui/dist/.gitkeep
+frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
+
+# Данные и секреты: ключи, сертификаты и пароли в репозиторий не попадают
+/secrets/
+/data/
+*.key
+*.crt
+*.pem
+*.env
+.env*
+
+# Служебное
+frontend/.impeccable/
+.impeccable/
+*.log

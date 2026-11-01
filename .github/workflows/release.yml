@@ -1,0 +1,54 @@
+name: release
+
+# Тег вида v0.29.0 собирает интерфейс и бинарник и публикует архив и его контрольную сумму: их скачивают install.sh в корне и scripts/fetch-release.sh.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Интерфейс
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Проверки
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Сборка
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/whitelist-panel
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+            -o dist/whitelist-panel/anypanel ./cmd/anypanel
+          cp deploy/install.sh internal/nodeinstall/install-node.sh dist/whitelist-panel/
+          chmod +x dist/whitelist-panel/*
+          tar -C dist/whitelist-panel -czf dist/whitelist-panel-linux-amd64.tar.gz anypanel install.sh install-node.sh
+          (cd dist && sha256sum whitelist-panel-linux-amd64.tar.gz > whitelist-panel-linux-amd64.tar.gz.sha256)
+
+      - name: Релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/whitelist-panel-linux-amd64.tar.gz dist/whitelist-panel-linux-amd64.tar.gz.sha256 \
+            --title "$GITHUB_REF_NAME" --generate-notes
