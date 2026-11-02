@@ -16,7 +16,7 @@ func TestBuiltInCopiesAreValidForBothAppsAndDoNotNeedTheNetwork(t *testing.T) {
 	var s Source // zero value: no network
 	for _, app := range []string{"happ", "incy"} {
 		ps, err := s.Presets(context.Background(), app, false)
-		if err != nil || len(ps) != 2 || ps[0].ID != "default" || ps[1].ID != "whitelist" {
+		if err != nil || len(ps) != 3 || ps[0].ID != "default" || ps[1].ID != "whitelist" || ps[2].ID != RussianID {
 			t.Fatalf("%s: %+v %v", app, ps, err)
 		}
 		for _, p := range ps {
@@ -153,5 +153,48 @@ func TestRefreshAsksGitHubAgainButNotMoreOftenThanEvery30Seconds(t *testing.T) {
 	_, _ = s.Presets(context.Background(), "happ", false)
 	if n.Load() != 4 {
 		t.Fatalf("an ordinary load still trusts the hour of memory: %d", n.Load())
+	}
+}
+
+func TestWhitelistRUIsDefaultUnderItsOwnNameWithTheRussianNamesAdded(t *testing.T) {
+	var s Source
+	for _, app := range []string{"happ", "incy"} {
+		ps, _ := s.Presets(context.Background(), app, false)
+		def, ru := ps[0], ps[2]
+		if ru.Name != RussianName || ru.Name == def.Name {
+			t.Fatalf("%s: the apps must show whitelist_RU, got %q", app, ru.Name)
+		}
+		d, err := decode(def.Link, app)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := decode(ru.Link, app)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Geoipurl != d.Geoipurl || r.Geositeurl != d.Geositeurl || r.LastUpdated != d.LastUpdated {
+			t.Fatalf("%s: same geo files and date as DEFAULT: %+v %+v", app, r, d)
+		}
+		direct := strings.Join(r.DirectSites, ",")
+		for _, want := range append([]string{"geosite:category-ru"}, RussianDirect...) {
+			if !strings.Contains(direct, want) {
+				t.Fatalf("%s: %s is not sent direct: %s", app, want, direct)
+			}
+		}
+		if len(r.DirectSites) != len(d.DirectSites)+len(RussianDirect) {
+			t.Fatalf("%s: exactly the Russian names are added", app)
+		}
+		// Asking again must not add them twice, and the link must pass the panel's own checks.
+		again, err := whitelistRU(ru.Link, app)
+		if err != nil || again != ru.Link {
+			t.Fatalf("%s: idempotent: %v", app, err)
+		}
+		if app == "happ" {
+			if out, err := sub.HappRoutingLink(ru.Link); err != nil || out != ru.Link {
+				t.Fatalf("%v", err)
+			}
+		} else if line, err := sub.IncyRoutingLine(ru.Link); err != nil || line != ru.Link {
+			t.Fatalf("%v", err)
+		}
 	}
 }

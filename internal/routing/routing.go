@@ -8,6 +8,7 @@
 package routing
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/base64"
@@ -56,11 +57,30 @@ type Preset struct {
 	Source string `json:"source"`
 }
 
+// RussianID is the preset the panel builds itself: DEFAULT with the Russian service names written out.
+const RussianID = "whitelist_ru"
+
+// RussianName is what the apps show as the name of that profile.
+const RussianName = "whitelist_RU"
+
+// RussianDirect are the names that go direct next to the geo lists of the profile: the Russian zones and the big Russian
+// services whose names are not in them (Yandex lives on yandex.net and yastatic.net, VK on vk.com and userapi.com…).
+// Nothing here depends on a geo file, so they work even where the app's files lack a list.
+var RussianDirect = []string{
+	"domain:ru", "domain:su", "domain:xn--p1ai", "domain:xn--80asehdb", "domain:xn--c1avg",
+	"domain:yandex.com", "domain:yandex.net", "domain:yandex.by", "domain:yandex.kz", "domain:yandex.uz", "domain:yandex.cloud",
+	"domain:yandexcloud.net", "domain:yastatic.net", "domain:yango.com", "domain:ya.cc", "domain:yadi.sk",
+	"domain:vk.com", "domain:vk.me", "domain:vkuser.net", "domain:userapi.com", "domain:vk-cdn.net", "domain:mycdn.me",
+	"domain:2gis.com", "domain:wbstatic.net", "domain:avito.st", "domain:ozone.ru",
+}
+
 var meta = []struct{ id, label, hint string }{
 	{"default", "DEFAULT — Россия и Беларусь напрямую",
 		"Российские и белорусские сайты, банки, Яндекс, VK, обновления Apple и Microsoft, игровые платформы — напрямую. YouTube, Telegram, GitHub и Google Play — через прокси. Реклама, телеметрия Windows и торренты блокируются."},
 	{"whitelist", "WHITELIST — только белые списки РФ напрямую",
 		"Напрямую идут только сервисы и IP из белых списков РФ, всё остальное — через прокси. Реклама, телеметрия Windows и торренты блокируются."},
+	{RussianID, "whitelist_RU — Россия напрямую, с явными доменами Яндекса и VK",
+		"DEFAULT, в который дописаны домены российских сервисов вне зоны .ru (Яндекс, VK, 2ГИС, Wildberries): они идут напрямую, даже если в geo-файлах приложения нет нужных списков. В приложении профиль называется whitelist_RU. Обновляется вместе с DEFAULT."},
 }
 
 type entry struct {
@@ -105,7 +125,16 @@ func (s *Source) Presets(ctx context.Context, app string, refresh bool) ([]Prese
 	}
 	out := make([]Preset, 0, len(meta))
 	for _, m := range meta {
-		link, source := s.link(ctx, app, a.dir, a.scheme, m.id, refresh)
+		base := m.id
+		if m.id == RussianID {
+			base = "default"
+		}
+		link, source := s.link(ctx, app, a.dir, a.scheme, base, refresh)
+		if m.id == RussianID {
+			if l, err := whitelistRU(link, a.scheme); err == nil {
+				link = l
+			}
+		}
 		p := Preset{ID: m.id, Label: m.label, Hint: m.hint, Link: link, Source: source}
 		if prof, err := decode(link, a.scheme); err == nil {
 			p.Name = prof.Name
@@ -178,6 +207,40 @@ func (s *Source) fetch(ctx context.Context, dir, scheme, id string) (string, err
 		return "", err // a changed or damaged upstream file never reaches the admin: the built-in copy is used instead
 	}
 	return link, nil
+}
+
+// whitelistRU makes the whitelist_RU profile of a DEFAULT deep link: the same profile (geo files, DNS, rules) under the name
+// whitelist_RU, with RussianDirect added to what goes direct. Fields the panel does not know stay as they are.
+func whitelistRU(link, scheme string) (string, error) {
+	prefix := scheme + "://routing/onadd/"
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(link, prefix))
+	if err != nil {
+		return "", err
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return "", err
+	}
+	sites, _ := m["DirectSites"].([]any)
+	have := map[string]bool{}
+	for _, v := range sites {
+		if s, ok := v.(string); ok {
+			have[s] = true
+		}
+	}
+	for _, d := range RussianDirect {
+		if !have[d] {
+			sites = append(sites, d)
+		}
+	}
+	m["DirectSites"], m["Name"] = sites, RussianName
+	out, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return prefix + base64.StdEncoding.EncodeToString(out), nil
 }
 
 // profile is the part of a routing profile the panel looks at.

@@ -362,7 +362,7 @@ func TestRoutingPresetsEndpoint(t *testing.T) {
 	}
 	rec := do(e.h, http.MethodGet, "/api/routing-presets?app=happ", "", e.cookie, nil)
 	var ps []struct{ ID, Link, Source, Name string }
-	if err := json.Unmarshal(rec.Body.Bytes(), &ps); err != nil || rec.Code != 200 || len(ps) != 2 {
+	if err := json.Unmarshal(rec.Body.Bytes(), &ps); err != nil || rec.Code != 200 || len(ps) != 3 {
 		t.Fatalf("%d %v %s", rec.Code, err, rec.Body)
 	}
 	if ps[0].ID != "default" || ps[1].ID != "whitelist" || !strings.HasPrefix(ps[0].Link, "happ://routing/onadd/") || ps[0].Source != "embedded" || ps[0].Name != "RoscomVPN" {
