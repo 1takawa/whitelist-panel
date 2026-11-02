@@ -20,6 +20,7 @@ type JSONOptions struct {
 	DNS         string       // JSON object replacing the default dns section
 	Info        []string     // names of info nodes: dummy configs that only carry a name
 	Auto        *AutoOptions // the automatic node entry; nil = none
+	Profile     string       // the app's routing profile (a happ:// or incy:// link, or JSON), written into the configs as rules
 }
 
 type obj = map[string]any
@@ -121,12 +122,17 @@ func clientDNS(opt JSONOptions) any {
 }
 
 // baseRules are the routing rules every client config starts with: the custom ones, then private addresses direct.
-func baseRules(opt JSONOptions) []any {
+func baseRules(opt JSONOptions, balancer bool) ([]any, string) {
 	var rules []any
 	if v, ok := parse(opt.Rules).([]any); ok {
 		rules = append(rules, v...)
 	}
-	return append(rules, obj{"type": "field", "ip": []string{"geoip:private"}, "outboundTag": "direct"})
+	profile, strategy := profileRules(opt.Profile, balancer)
+	if strategy == "" {
+		strategy = "AsIs"
+	}
+	rules = append(rules, profile...)
+	return append(rules, obj{"type": "field", "ip": []string{"geoip:private"}, "outboundTag": "direct"}), strategy
 }
 
 func httpIn() obj {
@@ -169,7 +175,7 @@ func clientConfig(e links.Endpoint, opt JSONOptions) (obj, error) {
 		obj{"tag": "block", "protocol": "blackhole"})
 
 	dns := clientDNS(opt)
-	rules := baseRules(opt)
+	rules, strategy := baseRules(opt, false)
 
 	return obj{
 		"remarks":   e.Name,
@@ -177,7 +183,7 @@ func clientConfig(e links.Endpoint, opt JSONOptions) (obj, error) {
 		"dns":       dns,
 		"inbounds":  []any{socksIn(), httpIn()},
 		"outbounds": outbounds,
-		"routing":   obj{"domainStrategy": "AsIs", "rules": rules},
+		"routing":   obj{"domainStrategy": strategy, "rules": rules},
 	}, nil
 }
 

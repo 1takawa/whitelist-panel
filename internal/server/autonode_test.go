@@ -35,3 +35,19 @@ func TestHappAndIncyGetJSONOnlyWhenTheAutoNodeCanBeBuilt(t *testing.T) {
 		t.Error("servers excluded from the automatic node do not count")
 	}
 }
+
+func TestRoutingProfileGoesIntoJSONOnlyForTheAppItIsFor(t *testing.T) {
+	set := model.SubSettings{
+		Happ: model.HappSettings{EnableRouting: true, RoutingRules: "happ://routing/onadd/H"},
+		Incy: model.IncySettings{EnableRouting: true, RoutingRules: "incy://routing/onadd/I"},
+	}
+	for ua, want := range map[string]string{"Happ/2.1.0": "happ://routing/onadd/H", "INCY/1.0": "incy://routing/onadd/I", "v2rayN/6.0": "", "Mozilla/5.0": ""} {
+		if got := appRoutingProfile(set, ua); got != want {
+			t.Fatalf("%s: %q", ua, got)
+		}
+	}
+	set.Happ.EnableRouting = false
+	if got := appRoutingProfile(set, "Happ/2.1.0"); got != "" {
+		t.Fatalf("routing switched off: %q", got)
+	}
+}

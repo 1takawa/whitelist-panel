@@ -1,6 +1,7 @@
 package formats
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -194,5 +195,71 @@ func TestAutoNodeStandsWhereItWasPlaced(t *testing.T) {
 	sel := cfg.Groups[0].Proxies
 	if len(sel) < 3 || sel[1] != "A" {
 		t.Fatalf("the group stands second among the choices: %v", sel)
+	}
+}
+
+const testProfile = `{"Name":"RoscomVPN","RouteOrder":"block-proxy-direct","DomainStrategy":"IPIfNonMatch",
+ "DirectSites":["geosite:private","geosite:category-ru","geosite:whitelist","geosite:microsoft"],
+ "DirectIp":["geoip:private","geoip:direct"],
+ "ProxySites":["geosite:youtube","geosite:telegram"],
+ "BlockSites":["geosite:win-spy","geosite:torrent","geosite:category-ads"]}`
+
+func TestRoutingProfileIsWrittenIntoTheConfigs(t *testing.T) {
+	link := "happ://routing/onadd/" + base64.StdEncoding.EncodeToString([]byte(testProfile))
+	for name, raw := range map[string]string{"json": testProfile, "link": link} {
+		cfgs := decodeConfigs(t, mustJSON(t, eps(), JSONOptions{Profile: raw}))
+		rules := cfgs[0]["routing"].(map[string]any)["rules"].([]any)
+		var domains []string
+		var tags []string
+		for _, r := range rules {
+			m := r.(map[string]any)
+			if d, ok := m["domain"].([]any); ok {
+				for _, x := range d {
+					domains = append(domains, x.(string))
+				}
+				tags = append(tags, m["outboundTag"].(string))
+			}
+		}
+		all := strings.Join(domains, ",")
+		for _, want := range []string{"geosite:category-ru", "geosite:microsoft", "domain:ru", "domain:su", "domain:xn--p1ai", "geosite:youtube"} {
+			if !strings.Contains(all, want) {
+				t.Fatalf("%s: %s missing from %s", name, want, all)
+			}
+		}
+		for _, bad := range []string{"whitelist", "torrent", "category-ads", "geoip:direct", "win-spy"} {
+			if strings.Contains(all, bad) || strings.Contains(string(mustJSON(t, eps(), JSONOptions{Profile: raw})), bad) {
+				t.Fatalf("%s: %s is not in every geo file and must not be written", name, bad)
+			}
+		}
+		if got := strings.Join(tags, ","); got != "proxy,direct" {
+			t.Fatalf("%s: the profile's order (proxy before direct; block had nothing safe): %s", name, got)
+		}
+		if cfgs[0]["routing"].(map[string]any)["domainStrategy"] != "AsIs" {
+			t.Fatalf("%s: no IP list that needs resolving, so no resolving", name)
+		}
+	}
+
+	// Without a profile, or with routing switched off, the configs are as before.
+	plain := string(mustJSON(t, eps(), JSONOptions{}))
+	for _, raw := range []string{"", "happ://routing/off", "garbage"} {
+		if got := string(mustJSON(t, eps(), JSONOptions{Profile: raw})); got != plain {
+			t.Fatalf("%q must change nothing", raw)
+		}
+	}
+	// The automatic node has no proxy outbound: its balancer takes that place.
+	auto := decodeConfigs(t, mustJSON(t, eps(), JSONOptions{Profile: testProfile, Auto: autoOpt()}))[0]
+	rules := auto["routing"].(map[string]any)["rules"].([]any)
+	found := false
+	for _, r := range rules {
+		m := r.(map[string]any)
+		if _, ok := m["domain"]; ok && m["balancerTag"] == "auto" {
+			found = true
+		}
+		if m["outboundTag"] == "proxy" {
+			t.Fatalf("the automatic node has no proxy outbound: %+v", m)
+		}
+	}
+	if !found {
+		t.Fatal("proxy rules of the profile go to the balancer")
 	}
 }

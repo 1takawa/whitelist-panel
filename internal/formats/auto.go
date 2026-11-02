@@ -86,7 +86,7 @@ func autoConfig(eps []links.Endpoint, opt JSONOptions) (obj, error) {
 		obj{"tag": "direct", "protocol": "freedom", "settings": obj{"domainStrategy": "UseIP"}},
 		obj{"tag": "block", "protocol": "blackhole"})
 
-	rules := baseRules(opt)
+	rules, strategy := baseRules(opt, true)
 	rules = append(rules, obj{"type": "field", "network": "tcp,udp", "balancerTag": "auto"})
 
 	return obj{
@@ -103,7 +103,7 @@ func autoConfig(eps []links.Endpoint, opt JSONOptions) (obj, error) {
 		"inbounds":  []any{socksIn(), httpIn()},
 		"outbounds": outbounds,
 		"routing": obj{
-			"domainStrategy": "AsIs",
+			"domainStrategy": strategy,
 			"balancers": []any{obj{
 				"tag": "auto", "selector": []string{nodeTagPrefix}, "strategy": obj{"type": "leastPing"}, "fallbackTag": firstTag,
 			}},

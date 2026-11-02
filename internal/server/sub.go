@@ -206,7 +206,7 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request, k kind) {
 		h.Set("Content-Type", "text/yaml; charset=utf-8")
 		_, _ = w.Write(body)
 	case kindJSON:
-		body, err := s.xrayJSON(sb)
+		body, err := s.xrayJSON(sb, ua)
 		if err != nil {
 			s.log.Error("xray json failed", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -242,12 +242,25 @@ func (s *Server) clash(sb *panel.Subscription) ([]byte, error) {
 	return formats.Clash(sb.Endpoints, opt)
 }
 
-func (s *Server) xrayJSON(sb *panel.Subscription) ([]byte, error) {
+func (s *Server) xrayJSON(sb *panel.Subscription, ua string) ([]byte, error) {
 	f := sb.Settings.Subscription.Formats
 	return formats.XrayJSON(sb.Endpoints, formats.JSONOptions{
 		AlwaysArray: f.JSONAlwaysArray, Mux: f.JSONMux, Fragment: f.JSONFragment, Noises: f.JSONNoises,
 		Rules: f.JSONRules, DNS: f.JSONDNS, Info: sb.InfoNames, Auto: autoOptions(sb.Settings.Subscription.AutoNode),
+		Profile: appRoutingProfile(sb.Settings.Subscription, ua),
 	})
+}
+
+// appRoutingProfile is the routing profile the asking app would get in its header (Happ) or in the body (INCY); it is also
+// written into the JSON configs, because an app may ignore the header. Other apps have no such profile.
+func appRoutingProfile(set model.SubSettings, ua string) string {
+	switch {
+	case sub.IsIncy(ua) && set.Incy.EnableRouting:
+		return set.Incy.RoutingRules
+	case sub.IsHapp(ua) && set.Happ.EnableRouting:
+		return set.Happ.RoutingRules
+	}
+	return ""
 }
 
 type publicLink struct {
