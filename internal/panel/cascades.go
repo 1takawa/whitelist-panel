@@ -748,6 +748,11 @@ func (s *Service) syncSNI(ctx context.Context, entryServerID string) error {
 			sites = append(sites, front.Site{Domain: c.Domain, Port: entry.Port})
 		}
 	}
+	for _, in := range all { // nodes of the main server on a domain of their own
+		if in.NodeDomain != "" && in.ServerID == entryServerID {
+			sites = append(sites, front.Site{Domain: in.NodeDomain, Port: in.Port})
+		}
+	}
 	if entryServerID == "" {
 		if s.SNI == nil {
 			return nil
@@ -782,6 +787,15 @@ func (s *Service) SyncSNI(ctx context.Context) error {
 	}
 	for _, c := range list {
 		if c.Domain != "" && c.EntryServerID == "" {
+			return s.syncSNI(ctx, "")
+		}
+	}
+	all, err := s.Store.ListInbounds(ctx)
+	if err != nil {
+		return err
+	}
+	for _, in := range all {
+		if in.NodeDomain != "" && in.ServerID == "" {
 			return s.syncSNI(ctx, "")
 		}
 	}

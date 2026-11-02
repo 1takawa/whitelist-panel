@@ -60,6 +60,9 @@ type Inbound struct {
 
 	// CascadeID is set on the inbound a cascade created on its entry server: its traffic leaves through the exit server.
 	CascadeID string `json:"cascadeId" bson:"cascadeId,omitempty"`
+	// NodeDomain marks a connection that is a node of the main server on a REALITY domain of its own: nginx routes the
+	// domain to it (see Service.SetupMainNode). Empty for every other connection.
+	NodeDomain string `json:"nodeDomain,omitempty" bson:"nodeDomain,omitempty"`
 
 	// AcceptProxyProtocol must be true when nginx forwards to this inbound with proxy_protocol on.
 	AcceptProxyProtocol bool `json:"acceptProxyProtocol" bson:"acceptProxyProtocol"`

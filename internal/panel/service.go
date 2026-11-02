@@ -374,6 +374,7 @@ func (s *Service) UpdateInbound(ctx context.Context, id string, in model.Inbound
 		return nil, err
 	}
 	in.ID, in.CreatedAt, in.CascadeID = old.ID, old.CreatedAt, old.CascadeID // a form cannot turn a connection into (or out of) a cascade
+	in.NodeDomain = old.NodeDomain                                           // nor into (or out of) a node of the main server
 	in.Up, in.Down, in.LastReset = old.Up, old.Down, old.LastReset           // counters belong to the server, not to the form
 	if in.TrafficReset != model.ResetNever && in.LastReset == nil {
 		now := s.Now()
@@ -442,7 +443,14 @@ func (s *Service) DeleteInbound(ctx context.Context, id string) error {
 	if oldErr == nil && old.CascadeID != "" {
 		_ = s.Store.DeleteCascade(ctx, old.CascadeID) // the cascade lives and dies with its node
 	}
-	return wrapApply(s.applyLocked(ctx, false))
+	applyErr := wrapApply(s.applyLocked(ctx, false))
+	if oldErr == nil && old.NodeDomain != "" && old.ServerID == "" {
+		// The domain goes away from nginx and Caddy with its node.
+		if err := s.syncSNI(ctx, ""); err != nil && s.Log != nil {
+			s.Log.Warn("removing the domain of a deleted node failed", "domain", old.NodeDomain, "err", err)
+		}
+	}
+	return applyErr
 }
 
 // NewRealityKeys generates a key pair and short id for the inbound form.

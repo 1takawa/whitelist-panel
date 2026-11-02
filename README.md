@@ -28,6 +28,7 @@
 - [Быстрая установка](#-быстрая-установка)
 - [Варианты установки](#-варианты-установки)
 - [Обновление](#-обновление)
+- [Нода на самом сервере панели](#-нода-на-самом-сервере-панели)
 - [Дополнительные серверы (ноды)](#-дополнительные-серверы-ноды)
 - [Разделы панели](#-разделы-панели)
 - [Подписки и приложения](#-подписки-и-приложения)
@@ -123,15 +124,25 @@
 
 ## 🚀 Быстрая установка
 
-Одна команда от root на чистом сервере (домены нужно заранее направить A-записями на IP сервера):
+Одна команда от root на чистом сервере. Домены нужно заранее направить A-записями на IP сервера:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/1takawa/whitelist-panel/main/install.sh)
+```
+
+Установщик спросит **два домена**:
+1. **домен REALITY**: на нём сразу поднимется нода VLESS + REALITY на этом же сервере. Этот пункт можно **пропустить** (Enter): ноду поставите позже одной кнопкой в панели;
+2. **домен панели**: адрес панели и подписок.
+
+Те же домены можно передать ключами и ничего не вводить:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/1takawa/whitelist-panel/main/install.sh) \
-  --panel-domain panel.example.com --reality-domain reality.example.com
+  --reality-domain reality.example.com --panel-domain panel.example.com
 ```
 
 Скрипт скачивает последний релиз, проверяет контрольную сумму и запускает основной установщик: он проверит систему и DNS,
-поставит MongoDB, nginx, Caddy и Xray, создаст администратора и выведет адрес, логин и пароль.
+поставит MongoDB, nginx, Caddy и Xray, создаст администратора, поднимет ноду на домене REALITY (если он указан) и выведет адрес, логин и пароль.
 Данные входа сохраняются в `/root/anypanel-credentials.txt`: сохраните их и удалите файл.
 
 После установки: **Подключения → Добавить → «VLESS + REALITY»**.
@@ -168,14 +179,15 @@ sudo bash install.sh --panel-domain panel.example.com --reality-domain reality.e
 
 ```bash
 export ANYPANEL_ADMIN_PASS='длинный-пароль-от-10-символов'
-bash <(curl -fsSL https://raw.githubusercontent.com/1takawa/whitelist-panel/main/install.sh) --panel-domain panel.example.com --reality-domain reality.example.com \
+bash <(curl -fsSL https://raw.githubusercontent.com/1takawa/whitelist-panel/main/install.sh) --reality-domain reality.example.com --panel-domain panel.example.com \
   --email admin@example.com --admin-user admin -y
 ```
 
 | Параметр | Значение по умолчанию |
 |---|---|
-| `--panel-domain` | обязателен: домен панели и подписок |
-| `--reality-domain` | обязателен: домен для VLESS + REALITY |
+| `--panel-domain` | обязателен (в терминале без ключа спросит): домен панели и подписок |
+| `--reality-domain` | домен ноды VLESS + REALITY на этом сервере; без него в терминале спросит, а без терминала нода не ставится |
+| `--skip-reality` | не ставить ноду сейчас и не спрашивать (позже: «Серверы» → «Поставить ноду») |
 | `--email` | нет: адрес для Let's Encrypt |
 | `--admin-user` | `admin` |
 | `--admin-pass` | если не задан, генерируется; лучше передавать через `ANYPANEL_ADMIN_PASS` |
@@ -191,8 +203,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/1takawa/whitelist-panel/main
 
 ```
 Интернет :443 ──► nginx (stream, SNI)
-                   ├─ домен REALITY ──► Xray   127.0.0.1:8443
-                   └─ остальное     ──► Caddy  127.0.0.1:7443 ──► панель 127.0.0.1:28270
+                   ├─ домены нод REALITY ──► Xray   127.0.0.1:8444 и выше (по порту на домен)
+                   └─ остальное          ──► Caddy  127.0.0.1:7443 ──► панель 127.0.0.1:28270
 Интернет :80  ──► Caddy (выпуск сертификатов, перенаправление на HTTPS)
 ```
 
@@ -213,6 +225,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/1takawa/whitelist-panel/main
 установщик сам возвращает прежнюю версию (она лежит рядом как `/usr/local/bin/anypanel.prev`).
 
 ---
+
+## 🖥 Нода на самом сервере панели
+
+На сервере с панелью можно держать и свою ноду VLESS + REALITY на отдельном домене. Её можно поставить при установке (домен REALITY)
+или позже: **Серверы → «Главный сервер» → «Поставить ноду»**, указать домен (A-запись на этот сервер). Панель проверит домен,
+выпустит сертификат, поставит сайт-заглушку, добавит домен в nginx и создаст подключение, которое сразу попадёт в подписки всех клиентов.
+Таких нод может быть несколько, у каждой свой домен. Нода обычное подключение: её можно выбрать входом или выходом **каскада**,
+так что при переезде на другой сервер каскад остаётся.
 
 ## 🖥 Дополнительные серверы (ноды)
 

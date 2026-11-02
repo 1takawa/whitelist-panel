@@ -64,3 +64,17 @@ func (s *Server) deleteCascade(w http.ResponseWriter, r *http.Request) {
 	}
 	s.finish(w, nil, err)
 }
+
+// setupMainNode puts a node with a domain of its own on the machine the panel runs on (session only: it edits nginx and Caddy).
+func (s *Server) setupMainNode(w http.ResponseWriter, r *http.Request) {
+	in, ok := decode[panel.MainNodeInput](w, r)
+	if !ok {
+		return
+	}
+	v, warning, err := s.svc.SetupMainNode(r.Context(), in)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result{Item: v, Warning: warning})
+}

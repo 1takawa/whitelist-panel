@@ -6,7 +6,7 @@ import { ask } from '../components/confirm'
 import CountryPicker from '../components/CountryPicker'
 import { useLoad } from '../hooks'
 import { formatBytes, formatUptime } from '../lib'
-import type { Dashboard, ServerClient, ServerInfo } from '../types'
+import type { Dashboard, DomainCheck, Inbound, ServerClient, ServerInfo } from '../types'
 import { JobLog, NodeInstaller } from './NodeInstall'
 import XrayProfileModal from './XrayProfile'
 import type { XrayStatus } from '../types'
@@ -311,14 +311,83 @@ function Row({ s, onChanged, onNote, onEdit, onToken, onUpgrade, onFirewall, onR
   )
 }
 
+// MainNodeModal puts a node with a domain of its own on the server the panel runs on: the panel checks the domain, tells
+// nginx and Caddy about it (certificate and decoy site) and creates the VLESS + REALITY connection.
+function MainNodeModal({ onClose, onDone }: { onClose: () => void; onDone: (warning?: string) => void }) {
+  const [domain, setDomain] = useState('')
+  const [name, setName] = useState('')
+  const [country, setCountry] = useState('')
+  const [check, setCheck] = useState<DomainCheck | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  // The domain is checked a moment after typing stops: free, and pointing at this server.
+  useEffect(() => {
+    setCheck(null)
+    const d = domain.trim()
+    if (d.length < 4 || !d.includes('.')) return
+    setChecking(true)
+    const t = setTimeout(() => {
+      api<DomainCheck>('/api/cascades/check-domain', { method: 'POST', body: { domain: d, entryServerId: '' } })
+        .then(setCheck, () => setCheck(null))
+        .finally(() => setChecking(false))
+    }, 600)
+    return () => {
+      clearTimeout(t)
+      setChecking(false)
+    }
+  }, [domain])
+
+  async function submit() {
+    setBusy(true)
+    setError('')
+    try {
+      const r = await api<{ warning?: string }>('/api/main-node', { method: 'POST', body: { domain: domain.trim(), name: name.trim(), country } })
+      onDone(r.warning)
+    } catch (e) {
+      setError(errText(e))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title="Поставить ноду на этом сервере" onClose={onClose} persistent>
+      <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); if (domain.trim() && !busy) void submit() }}>
+        <Field label="Домен ноды" hint="Свой домен или поддомен с A-записью на адрес этого сервера. Панель сама выпустит сертификат, поставит сайт-заглушку и создаст подключение VLESS + REALITY.">
+          <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="reality.example.com" autoFocus spellCheck={false} />
+        </Field>
+        {checking && <p className="text-sm text-faint">Проверяю домен…</p>}
+        {check && !checking && (check.ok ? <Alert tone="ok">{check.message ?? 'Домен подходит'}</Alert> : <Alert tone="warn">{check.problem}</Alert>)}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Название" hint="Так нода называется в подписке. Пусто: по домену.">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={domain.trim() || 'Германия'} />
+          </Field>
+          <Field label="Страна и флаг" hint="Пусто: определится по адресу домена.">
+            <CountryPicker value={country} onChange={setCountry} emptyLabel="Определить автоматически" />
+          </Field>
+        </div>
+        {error && <Alert>{error}</Alert>}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>Отмена</Button>
+          <Button variant="primary" disabled={busy || domain.trim() === '' || (check !== null && !check.ok)} onClick={() => void submit()}>{busy ? 'Ставлю…' : 'Поставить'}</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 // The main server: the machine the panel itself runs on. Its Xray is tuned the same way as every node's.
 function LocalServer() {
   const st = useLoad<XrayStatus>('/api/xray/status')
   const dash = useLoad<Dashboard>('/api/dashboard')
+  const nodes = useLoad<Inbound[]>('/api/inbounds')
   const [open, setOpen] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const x = st.data
   const d = dash.data
+  const own = (nodes.data ?? []).filter((n) => !!n.nodeDomain && !n.serverId)
   const items: MenuItem[] = [
     { icon: 'sliders', label: 'Настройки Xray', onClick: () => setOpen(true) },
     {
@@ -343,9 +412,30 @@ function LocalServer() {
       load={d ? loadText({ ...d.system }) : '—'}
       online={d?.clients.onlineHere ?? 0}
       footer={x?.lastError ? <span className="text-blocked">{x.lastError}</span> : x?.version ? `Xray ${x.version}${x.running ? '' : ' · остановлен'}` : x && !x.installed ? 'Xray не установлен' : ''}
-      actions={<ActionMenu items={items} />}
+      actions={
+        <>
+          <Button variant="primary" className="h-8 !py-0" onClick={() => setAdding(true)}><Icon name="plus" className="size-4" />Поставить ноду</Button>
+          <ActionMenu items={items} />
+        </>
+      }
     >
+      {own.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-t border-line px-5 py-3">
+          {own.map((n) => <span key={n.id} className="rounded-md bg-surface-2 px-2 py-0.5 font-mono text-[11.5px] text-dim" title={n.remark}>{n.nodeDomain}</span>)}
+        </div>
+      )}
       {msg && <div className="px-5 pb-4"><Alert tone={msg.ok ? 'ok' : 'bad'}>{msg.text}</Alert></div>}
+      {adding && (
+        <MainNodeModal
+          onClose={() => setAdding(false)}
+          onDone={(w) => {
+            setAdding(false)
+            setMsg(w ? { ok: false, text: w } : { ok: true, text: 'Нода поставлена и добавлена в подписки всех клиентов.' })
+            void nodes.reload()
+            void dash.reload()
+          }}
+        />
+      )}
       {open && <XrayProfileModal id="local" title="главный сервер" onClose={() => { setOpen(false); void st.reload() }} />}
     </ServerCard>
   )

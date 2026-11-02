@@ -38,6 +38,7 @@ export type Inbound = {
   excludeFromSub: boolean
   disableFlow: boolean
   excludeFromAuto: boolean
+  nodeDomain?: string // a node of the main server on a domain of its own
   shareAddress: '' | 'listen'
   totalBytes: number
   expiryAt: string | null

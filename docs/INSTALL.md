@@ -5,11 +5,11 @@
 
 Все команды выполняются от root на чистом сервере: **Ubuntu 22.04 / 24.04 или Debian 12, x86_64**. Свободны должны быть TCP-порты **80** и **443**.
 
-Ниже `PANEL_DOMAIN` — домен панели и подписок, `REALITY_DOMAIN` — домен для VLESS + REALITY. Оба должны иметь A-запись на IP сервера.
+Ниже `PANEL_DOMAIN` — домен панели и подписок. Домен ноды REALITY для установки не нужен: ноду (с любым числом доменов) потом ставит сама
+панель, кнопкой **Серверы → «Главный сервер» → «Поставить ноду»**. Домен панели должен иметь A-запись на IP сервера.
 
 ```bash
 export PANEL_DOMAIN=panel.example.com
-export REALITY_DOMAIN=reality.example.com
 ```
 
 У вас должен быть каталог релиза с файлами `anypanel`, `install.sh` и `install-node.sh` (скачанный релиз или результат [сборки](../README.md#-сборка-из-исходников)).
@@ -54,12 +54,15 @@ mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'      # должно нап
 
 ## 3. nginx (stream) для маршрутизации по SNI
 
+nginx принимает 443 и раздаёт соединения по имени (SNI): домены нод REALITY уходят в Xray, всё остальное в Caddy. Домены нод панель
+дописывает сама, поэтому здесь в карте только «остальное»:
+
 ```bash
 apt-get install -y nginx libnginx-mod-stream
 cp -a /etc/nginx/nginx.conf /etc/nginx/nginx.conf.orig
 ```
 
-Замените `/etc/nginx/nginx.conf` на следующее (подставьте домен REALITY):
+Замените `/etc/nginx/nginx.conf` на следующее:
 
 ```nginx
 user www-data;
@@ -73,10 +76,8 @@ events { worker_connections 4096; }
 
 stream {
     map $ssl_preread_server_name $anypanel_upstream {
-        reality.example.com  reality;     # домен REALITY -> Xray
-        default              web;         # остальное -> Caddy
+        default              web;         # остальное -> Caddy; домены нод панель добавит сама
     }
-    upstream reality { server 127.0.0.1:8443; }
     upstream web     { server 127.0.0.1:7443; }
 
     server {
@@ -177,7 +178,7 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 LockPersonality=true
-ReadWritePaths=/etc/anypanel /var/lib/anypanel
+ReadWritePaths=/etc/anypanel /var/lib/anypanel -/etc/nginx -/etc/caddy
 
 [Install]
 WantedBy=multi-user.target
@@ -194,12 +195,12 @@ systemctl daemon-reload
 ```bash
 set -a; . /etc/anypanel.env; set +a
 printf '%s' 'ваш-длинный-пароль' | anypanel init-admin admin
-anypanel set-domains "$PANEL_DOMAIN" "$REALITY_DOMAIN"
+anypanel set-domains "$PANEL_DOMAIN" ""
 ```
 
-## 8. Caddy: панель и сайт-прикрытие
+## 8. Caddy: панель и сайты-прикрытия
 
-Каталог и страница для REALITY (сюда Xray направляет чужие соединения):
+Каталог и страница для REALITY (сюда Xray направляет чужие соединения; сайты для доменов нод панель добавляет сама):
 
 ```bash
 install -d -m 0755 /var/www/anypanel-decoy
@@ -225,7 +226,7 @@ cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.orig
     }
 }
 
-http://panel.example.com, http://reality.example.com {
+http://panel.example.com {
     redir https://{host}{uri} permanent
 }
 
@@ -242,10 +243,7 @@ panel.example.com {
     }
 }
 
-reality.example.com {
-    root * /var/www/anypanel-decoy
-    file_server
-}
+# Сайты-прикрытия нод REALITY панель дописывает сама: /etc/anypanel/sites/*.caddy
 ```
 
 ```bash
@@ -279,8 +277,8 @@ systemctl status anypanel caddy nginx mongod
 journalctl -u anypanel -f
 ```
 
-Откройте `https://panel.example.com`: сертификаты Caddy выпустит при первом обращении к каждому домену (до минуты).
-Войдите под администратором и создайте подключение **Подключения → Добавить → «VLESS + REALITY»**.
+Откройте `https://panel.example.com`: сертификат Caddy выпустит при первом обращении к домену (до минуты).
+Войдите под администратором и поставьте ноду: **Серверы → «Главный сервер» → «Поставить ноду»**, домен с A-записью на этот сервер.
 
 ---
 

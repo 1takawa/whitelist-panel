@@ -447,6 +447,7 @@ func TestCascadeAPIRules(t *testing.T) {
 		{http.MethodPut, "/api/cascades/x", `{"name":"x"}`},
 		{http.MethodDelete, "/api/cascades/x", ""},
 		{http.MethodPost, "/api/cascades/check-domain", `{"domain":"x.example.com"}`},
+		{http.MethodPost, "/api/main-node", `{"domain":"x.example.com"}`},
 	} {
 		if rec := do(e.h, r.method, r.path, r.body, nil, bearer(tok)); rec.Code != 401 {
 			t.Errorf("%s %s with a token must be refused (it rewrites other machines): %d", r.method, r.path, rec.Code)
@@ -454,6 +455,9 @@ func TestCascadeAPIRules(t *testing.T) {
 	}
 	if rec := do(e.h, http.MethodPost, "/api/cascades", `{"name":"x"}`, e.cookie, nil); rec.Code != 400 {
 		t.Fatalf("entry and exit are both the main server: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(e.h, http.MethodPost, "/api/main-node", `{"domain":"x.example.com"}`, e.cookie, nil); rec.Code != 400 {
+		t.Fatalf("a server that does not manage nginx says so: %d %s", rec.Code, rec.Body)
 	}
 	if rec := do(e.h, http.MethodDelete, "/api/cascades/nope", "", e.cookie, nil); rec.Code != 404 {
 		t.Fatalf("unknown cascade: %d", rec.Code)

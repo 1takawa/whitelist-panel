@@ -642,3 +642,85 @@ func TestHiddenExitConnectionStillServesTheCascade(t *testing.T) {
 		t.Fatalf("the hidden exit still serves the relay user:\n%s", cfg)
 	}
 }
+
+func TestMainServerGetsANodeOnADomainOfItsOwn(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _, sni, dns := cascadeEnvFull(t)
+	dns["fresh.example.com"] = []string{"203.0.113.10"}
+	svc.GeoCountry = func(context.Context, string) (string, error) { return "DE", nil }
+	c, _ := svc.CreateClient(ctx, model.Client{Email: "alice", Enable: true})
+
+	node, warning, err := svc.SetupMainNode(ctx, MainNodeInput{Domain: " Fresh.Example.com "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = warning
+	if node.NodeDomain != "fresh.example.com" || node.ServerID != "" || node.Public.Host != "fresh.example.com" || node.Public.Port != 443 ||
+		node.Security != model.SecReality || !node.AcceptProxyProtocol || node.Port < 8444 || node.Reality.PrivateKey == "" {
+		t.Fatalf("a REALITY connection behind nginx on its own domain: %+v", node)
+	}
+	if !strings.Contains(node.Remark, "fresh.example.com") || !strings.HasPrefix(node.Remark, "🇩🇪") {
+		t.Fatalf("named after the domain, with the flag of its country: %q", node.Remark)
+	}
+	if len(sni.sites) != 1 || sni.sites[0] != (front.Site{Domain: "fresh.example.com", Port: node.Port}) {
+		t.Fatalf("nginx and Caddy are told about the domain: %+v", sni.sites)
+	}
+	got, _ := svc.GetClient(ctx, c.ID)
+	if !got.Uses(node.ID) {
+		t.Fatal("the node is in every client's subscription")
+	}
+
+	// Editing the connection cannot take the marker away, and deleting it takes the domain away from nginx.
+	upd := *node
+	upd.NodeDomain = ""
+	if after, err := svc.UpdateInbound(ctx, node.ID, upd); err != nil || after.NodeDomain != "fresh.example.com" {
+		t.Fatalf("%+v %v", after, err)
+	}
+	if err := svc.DeleteInbound(ctx, node.ID); err != nil || len(sni.sites) != 0 {
+		t.Fatalf("%v %+v", err, sni.sites)
+	}
+}
+
+func TestMainServerNodeIsRefusedWhenTheDomainIsNotReady(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _, sni, dns := cascadeEnvFull(t)
+	dns["fresh.example.com"] = []string{"203.0.113.10"}
+	n := len(mustInbounds(t, svc))
+	for name, in := range map[string]MainNodeInput{
+		"empty":      {},
+		"no dns":     {Domain: "nowhere.example.com"},
+		"elsewhere":  {Domain: "elsewhere.example.com"},
+		"the panel":  {Domain: "panel.example.com"},
+		"not a name": {Domain: "not a domain"},
+	} {
+		if _, _, err := svc.SetupMainNode(ctx, in); !isInvalid(err) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if len(mustInbounds(t, svc)) != n || sni.calls != 0 {
+		t.Fatal("a refused node leaves nothing behind")
+	}
+	// nginx refusing the change takes the node back.
+	sni.fail = errors.New("nginx: boom")
+	if _, _, err := svc.SetupMainNode(ctx, MainNodeInput{Domain: "fresh.example.com"}); err == nil || len(mustInbounds(t, svc)) != n {
+		t.Fatalf("%v", err)
+	}
+	// Without the SNI manager the feature says so.
+	svc.SNI = nil
+	if _, _, err := svc.SetupMainNode(ctx, MainNodeInput{Domain: "fresh.example.com"}); !isInvalid(err) {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestSyncSNIAtStartKnowsMainNodes(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _, sni, dns := cascadeEnvFull(t)
+	dns["fresh.example.com"] = []string{"203.0.113.10"}
+	if _, _, err := svc.SetupMainNode(ctx, MainNodeInput{Domain: "fresh.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	before := sni.calls
+	if err := svc.SyncSNI(ctx); err != nil || sni.calls != before+1 || len(sni.sites) != 1 {
+		t.Fatalf("a restart restores the files of a main node: %v %d %+v", err, sni.calls, sni.sites)
+	}
+}

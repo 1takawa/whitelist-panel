@@ -2,9 +2,11 @@
 #
 # Whitelist Panel — установщик (Ubuntu 22.04/24.04, Debian 12, x86_64).
 #
-#   sudo bash install.sh --panel-domain panel.example.com --reality-domain reality.example.com [опции]
+#   sudo bash install.sh [--reality-domain reality.example.com | --skip-reality] --panel-domain panel.example.com [опции]
 #
-# Схема 443: nginx (stream) раздаёт по SNI: домен REALITY -> Xray (127.0.0.1:8443), остальное -> Caddy (127.0.0.1:7443).
+# Без ключей в терминале установщик спросит два домена: REALITY (нода на этом же сервере, можно пропустить) и панели.
+#
+# Схема 443: nginx (stream) раздаёт по SNI: домены нод REALITY -> Xray (127.0.0.1:8444 и выше), остальное -> Caddy (127.0.0.1:7443).
 # Caddy выпускает сертификаты (HTTP-01 на :80), отдаёт панель и маршруты ws/gRPC/XHTTP-подключений.
 #
 set -Eeuo pipefail
@@ -35,6 +37,7 @@ ACME_EMAIL=""
 ADMIN_USER=admin
 ADMIN_PASS="${ANYPANEL_ADMIN_PASS:-}"
 SKIP_DNS=0
+SKIP_REALITY=0
 CHECK_ONLY=0
 ASSUME_YES=0
 
@@ -48,12 +51,13 @@ usage() {
   cat <<'EOF'
 Whitelist Panel — установщик
 
-  sudo bash install.sh --panel-domain panel.example.com --reality-domain reality.example.com [опции]
+  sudo bash install.sh [--reality-domain D | --skip-reality] --panel-domain D [опции]
   sudo bash install.sh upgrade        # обновить установленную панель до версии из этого каталога (с откатом при сбое)
 
-Нужны два домена (A-записи на IP этого сервера):
-  --panel-domain D      домен панели и подписок (HTTPS через Caddy)
-  --reality-domain D    домен для VLESS+REALITY (nginx направляет его SNI в Xray)
+Домены (A-записи на IP этого сервера). Без ключей в терминале установщик спросит их сам:
+  --reality-domain D    домен REALITY: на нём сразу поднимется нода VLESS+REALITY на этом сервере
+  --skip-reality        не ставить ноду сейчас (её можно поставить позже: «Серверы» -> «Поставить ноду»)
+  --panel-domain D      домен панели и подписок (HTTPS через Caddy), обязателен
 
 Опции:
   --email EMAIL         e-mail для Let's Encrypt (необязательно)
@@ -76,6 +80,7 @@ while [[ $# -gt 0 ]]; do
     --email)          ACME_EMAIL="${2:?}"; shift 2 ;;
     --admin-user)     ADMIN_USER="${2:?}"; shift 2 ;;
     --admin-pass)     ADMIN_PASS="${2:?}"; shift 2 ;;
+    --skip-reality)   SKIP_REALITY=1; REALITY_DOMAIN=""; shift ;;
     --skip-dns-check) SKIP_DNS=1; shift ;;
     --check)          CHECK_ONLY=1; shift ;;
     -y|--yes)         ASSUME_YES=1; shift ;;
@@ -105,12 +110,27 @@ check_os() {
   command -v systemctl >/dev/null || die "нужен systemd"
 }
 
+# Без ключей в терминале спрашивает домены: сначала REALITY (его можно пропустить), потом панели.
 ask_domains() {
+  if [[ -t 0 && -t 1 ]]; then
+    if [[ -z "$REALITY_DOMAIN" && "$SKIP_REALITY" -eq 0 ]]; then
+      printf '\n1) Домен REALITY для ноды на этом сервере (A-запись на IP сервера).\n   Enter — пропустить: ноду можно поставить позже в панели («Серверы» -> «Поставить ноду»).\n   Домен REALITY: '
+      read -r REALITY_DOMAIN || true
+      [[ -n "${REALITY_DOMAIN// }" ]] || SKIP_REALITY=1
+    fi
+    if [[ -z "$PANEL_DOMAIN" ]]; then
+      printf '\n2) Домен панели и подписок (A-запись на IP сервера).\n   Домен панели: '
+      read -r PANEL_DOMAIN || true
+    fi
+  fi
   PANEL_DOMAIN="${PANEL_DOMAIN,,}"; REALITY_DOMAIN="${REALITY_DOMAIN,,}"
-  [[ -n "$PANEL_DOMAIN" && -n "$REALITY_DOMAIN" ]] || die "укажите оба домена: --panel-domain и --reality-domain"
-  valid_domain "$PANEL_DOMAIN"   || die "некорректный домен панели: $PANEL_DOMAIN"
-  valid_domain "$REALITY_DOMAIN" || die "некорректный домен REALITY: $REALITY_DOMAIN"
-  [[ "$PANEL_DOMAIN" != "$REALITY_DOMAIN" ]] || die "домены панели и REALITY должны быть разными"
+  PANEL_DOMAIN="${PANEL_DOMAIN// }"; REALITY_DOMAIN="${REALITY_DOMAIN// }"
+  [[ -n "$PANEL_DOMAIN" ]] || die "укажите домен панели: --panel-domain (и, если нужна нода на этом сервере, --reality-domain)"
+  valid_domain "$PANEL_DOMAIN" || die "некорректный домен панели: $PANEL_DOMAIN"
+  if [[ -n "$REALITY_DOMAIN" ]]; then
+    valid_domain "$REALITY_DOMAIN" || die "некорректный домен REALITY: $REALITY_DOMAIN"
+    [[ "$PANEL_DOMAIN" != "$REALITY_DOMAIN" ]] || die "домены панели и REALITY должны быть разными"
+  fi
   [[ "$ADMIN_USER" =~ ^[A-Za-z0-9_]+$ ]] || die "логин администратора: только буквы, цифры и _"
   [[ -z "$ADMIN_PASS" || ${#ADMIN_PASS} -ge 10 ]] || die "пароль администратора должен быть не короче 10 символов"
 }
@@ -136,7 +156,7 @@ check_dns() {
   command -v curl >/dev/null || { warn "curl не установлен — проверка DNS пропущена"; return 0; }
   local ip d resolved
   ip="$(public_ip)" || { warn "не удалось определить публичный IP — проверка DNS пропущена"; return 0; }
-  for d in "$PANEL_DOMAIN" "$REALITY_DOMAIN"; do
+  for d in "$PANEL_DOMAIN" ${REALITY_DOMAIN:+"$REALITY_DOMAIN"}; do
     resolved="$(getent ahostsv4 "$d" | awk '{print $1}' | sort -u || true)"
     [[ -n "$resolved" ]] || die "домен $d не резолвится. Создайте A-запись на $ip (или --skip-dns-check)"
     grep -qx "$ip" <<<"$resolved" || die "$d указывает на $(tr '\n' ' ' <<<"$resolved")— а IP сервера $ip. Исправьте A-запись (или --skip-dns-check)"
@@ -231,11 +251,10 @@ include /etc/nginx/modules-enabled/*.conf;
 events { worker_connections 4096; }
 
 stream {
+    # Домены нод REALITY панель дописывает сама (Серверы -> Поставить ноду): включения лежат в /etc/anypanel/nginx.
     map \$ssl_preread_server_name \$anypanel_upstream {
-        ${REALITY_DOMAIN}  reality;
         default            web;
     }
-    upstream reality { server 127.0.0.1:${XRAY_REALITY_PORT}; }
     upstream web     { server 127.0.0.1:${CADDY_TLS_PORT}; }
 
     server {
@@ -340,7 +359,7 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 LockPersonality=true
-ReadWritePaths=/etc/anypanel /var/lib/anypanel
+ReadWritePaths=/etc/anypanel /var/lib/anypanel -/etc/nginx -/etc/caddy
 
 [Install]
 WantedBy=multi-user.target
@@ -349,7 +368,7 @@ EOF
 }
 
 write_caddyfile() {
-  log "Caddy: $CADDYFILE (панель $PANEL_DOMAIN, REALITY-сайт $REALITY_DOMAIN)"
+  log "Caddy: $CADDYFILE (панель $PANEL_DOMAIN)"
   install -d -m 0755 "$DECOY_DIR"
   cat > "$DECOY_DIR/index.html" <<'EOF'
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Welcome</title>
@@ -377,7 +396,7 @@ EOF
     }
 }
 
-http://${PANEL_DOMAIN}, http://${REALITY_DOMAIN} {
+http://${PANEL_DOMAIN} {
     redir https://{host}{uri} permanent
 }
 
@@ -395,11 +414,7 @@ ${PANEL_DOMAIN} {
     }
 }
 
-# Сайт-прикрытие для REALITY: сюда Xray направляет чужие соединения (dest 127.0.0.1:${CADDY_TLS_PORT}).
-${REALITY_DOMAIN} {
-    root * ${DECOY_DIR}
-    file_server
-}
+# Сайты-прикрытия для нод REALITY (сюда Xray направляет чужие соединения) панель добавляет сама: /etc/anypanel/sites/*.caddy
 EOF
   } > "$tmp"
   caddy validate --config "$tmp" --adapter caddyfile >/dev/null 2>&1 || { caddy validate --config "$tmp" --adapter caddyfile || true; rm -f "$tmp"; die "Caddyfile не прошёл проверку"; }
@@ -420,6 +435,33 @@ open_firewall() {
 
 load_env() { set -a; . "$ENV_FILE"; set +a; }
 
+# Ставит ноду на этом сервере тем же способом, что кнопка «Поставить ноду»: входит в панель под администратором и
+# вызывает её API. Сбой не останавливает установку: ноду можно поставить позже из панели.
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+create_main_node() {
+  local base="http://$PANEL_LISTEN" hdr cookie code body
+  hdr="$(curl -sS -D - -o /dev/null -H 'Content-Type: application/json' -H 'X-Requested-With: anypanel' \
+    -d "{\"username\":\"$(json_escape "$ADMIN_USER")\",\"password\":\"$(json_escape "$ADMIN_PASS")\"}" "$base/api/auth/login" 2>/dev/null || true)"
+  # Cookie сессии помечена Secure: curl не отправил бы её по http, поэтому передаём вручную.
+  cookie="$(printf '%s' "$hdr" | sed -n 's/^[Ss]et-[Cc]ookie: \(ap_session=[^;]*\).*/\1/p' | tr -d '\r' | head -n1)"
+  if [[ -z "$cookie" ]]; then
+    warn "не удалось войти в панель для установки ноды: поставьте её позже («Серверы» -> «Поставить ноду»)"
+    return 1
+  fi
+  body="$(mktemp)"
+  code="$(curl -sS -o "$body" -w '%{http_code}' --max-time 180 -H 'Content-Type: application/json' -H 'X-Requested-With: anypanel' \
+    -H "Cookie: $cookie" -d "{\"domain\":\"$(json_escape "$REALITY_DOMAIN")\"}" "$base/api/main-node" 2>/dev/null || true)"
+  if [[ "$code" == 200 ]]; then
+    rm -f "$body"
+    return 0
+  fi
+  warn "нода на $REALITY_DOMAIN не поставилась (HTTP $code): $(tr -d '\n' < "$body" | cut -c1-300)"
+  warn "проверьте A-запись домена и поставьте ноду позже: «Серверы» -> «Поставить ноду»"
+  rm -f "$body"
+  return 1
+}
+
 wait_health() {
   local i
   for i in $(seq 1 30); do
@@ -439,14 +481,14 @@ Whitelist Panel
 URL:      https://$PANEL_DOMAIN
 Логин:    $ADMIN_USER
 Пароль:   $ADMIN_PASS
-REALITY:  $REALITY_DOMAIN
+REALITY:  ${REALITY_DOMAIN:-не ставилась}
 EOF
   )
 }
 
 confirm_plan() {
   [[ "$ASSUME_YES" -eq 1 || ! -t 0 ]] && return 0
-  printf '\nБудет установлено:\n  домен панели  : %s\n  домен REALITY : %s\n  админ         : %s\n\nПродолжить? [y/N] ' "$PANEL_DOMAIN" "$REALITY_DOMAIN" "$ADMIN_USER"
+  printf '\nБудет установлено:\n  домен панели  : %s\n  нода REALITY  : %s\n  админ         : %s\n\nПродолжить? [y/N] ' "$PANEL_DOMAIN" "${REALITY_DOMAIN:-пропущена (поставите позже в панели)}" "$ADMIN_USER"
   local a; read -r a
   [[ "$a" =~ ^[YyДд] ]] || die "отменено"
 }
@@ -462,6 +504,13 @@ upgrade() {
   # Установки до 0.14 не знают про отдельные домены REALITY у каскадов: дописываем каталоги в окружение.
   if ! grep -q '^NGINX_SNI_DIR=' "$ENV_FILE"; then
     printf 'NGINX_SNI_DIR=%s\nCADDY_SITES_DIR=%s\n' "$CONF_DIR/nginx" "$CONF_DIR/sites" >> "$ENV_FILE"
+  fi
+  # Панель дописывает nginx.conf и Caddyfile для доменов нод и каскадов; под ProtectSystem=full каталог /etc для записи закрыт.
+  local unit=/etc/systemd/system/anypanel.service
+  if [[ -f "$unit" ]] && ! grep -q '^ReadWritePaths=.*/etc/nginx' "$unit"; then
+    log "Служба: разрешаю панели менять конфигурацию nginx и Caddy (домены нод)"
+    sed -i 's|^ReadWritePaths=.*|ReadWritePaths=/etc/anypanel /var/lib/anypanel -/etc/nginx -/etc/caddy|' "$unit"
+    systemctl daemon-reload
   fi
   cp -a /usr/local/bin/anypanel /usr/local/bin/anypanel.prev
   install -m 0755 "$PANEL_BIN_SRC" /usr/local/bin/anypanel.new
@@ -495,7 +544,7 @@ main() {
   check_dns
   check_ports
   check_not_installed
-  if [[ "$CHECK_ONLY" -eq 1 ]]; then log "Проверка пройдена: можно устанавливать ($PANEL_DOMAIN, $REALITY_DOMAIN)"; return 0; fi
+  if [[ "$CHECK_ONLY" -eq 1 ]]; then log "Проверка пройдена: можно устанавливать (панель $PANEL_DOMAIN, нода: ${REALITY_DOMAIN:-пропущена})"; return 0; fi
 
   confirm_plan
   apt_prepare
@@ -505,7 +554,7 @@ main() {
   install_xray
   install_panel
   create_admin
-  ( load_env; /usr/local/bin/anypanel set-domains "$PANEL_DOMAIN" "$REALITY_DOMAIN" )
+  ( load_env; /usr/local/bin/anypanel set-domains "$PANEL_DOMAIN" "" )  # домены нод хранятся у самих нод
   write_caddyfile
 
   log "Запуск сервисов"
@@ -515,6 +564,11 @@ main() {
   systemctl enable --now anypanel.service >/dev/null
   wait_health
   open_firewall
+  NODE_DONE=0
+  if [[ -n "$REALITY_DOMAIN" ]]; then
+    log "Нода на этом сервере: $REALITY_DOMAIN"
+    create_main_node && NODE_DONE=1 || true
+  fi
 
   cat <<EOF
 
@@ -526,7 +580,7 @@ ${C_G}${C_B}Whitelist Panel установлена.${C_0}
   Данные входа сохранены в $CRED_FILE (chmod 600) — сохраните и удалите файл.
 
   Сертификаты Caddy выпустит при первом обращении к каждому домену (до минуты).
-  Дальше: «Подключения» -> «Добавить» -> шаблон «VLESS + REALITY».
+  $( if [[ "$NODE_DONE" -eq 1 ]]; then echo "Нода: $REALITY_DOMAIN (уже в подписках клиентов)."; else echo "Ноду на этом сервере можно поставить в панели: «Серверы» -> «Поставить ноду»."; fi )
 
   Проверка: systemctl status anypanel caddy nginx mongod
   Логи:     journalctl -u anypanel -f

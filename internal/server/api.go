@@ -86,6 +86,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/cascades", a(s.listCascades))
 	mux.HandleFunc("POST /api/cascades", ss(s.createCascade))
 	mux.HandleFunc("POST /api/cascades/check-domain", ss(s.checkCascadeDomain))
+	mux.HandleFunc("POST /api/main-node", ss(s.setupMainNode))
 	mux.HandleFunc("POST /api/settings/preview-image", ss(s.uploadPreviewImage))
 	mux.HandleFunc("DELETE /api/settings/preview-image", ss(s.deletePreviewImage))
 	mux.HandleFunc("PUT /api/cascades/{id}", ss(s.renameCascade))
