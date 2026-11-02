@@ -221,7 +221,7 @@ func TestRoutingProfileIsWrittenIntoTheConfigs(t *testing.T) {
 			}
 		}
 		all := strings.Join(domains, ",")
-		for _, want := range []string{"geosite:category-ru", "geosite:microsoft", "domain:ru", "domain:su", "domain:xn--p1ai", "geosite:youtube"} {
+		for _, want := range []string{"geosite:category-ru", "geosite:microsoft", "domain:ru", "domain:su", "domain:xn--p1ai", "domain:yandex.net", "domain:yastatic.net", "domain:vk.com", "geosite:youtube"} {
 			if !strings.Contains(all, want) {
 				t.Fatalf("%s: %s missing from %s", name, want, all)
 			}

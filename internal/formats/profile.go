@@ -34,8 +34,16 @@ var safeGeo = map[string]bool{
 	"geoip:private": true,
 }
 
-// russianNames stand in for the Russian lists (category-ru, whitelist) of a profile that sends them direct.
-var russianNames = []string{"domain:ru", "domain:su", "domain:xn--p1ai"}
+// russianNames stand in for the Russian lists (category-ru, whitelist) of a profile that sends them direct: the Russian
+// zones, and the big Russian services whose names are not in them (Yandex lives on yandex.net and yastatic.net, VK on
+// vk.com and userapi.com…). Nothing here depends on a geo file.
+var russianNames = []string{
+	"domain:ru", "domain:su", "domain:xn--p1ai", "domain:xn--80asehdb", "domain:xn--c1avg",
+	"domain:yandex.com", "domain:yandex.net", "domain:yandex.by", "domain:yandex.kz", "domain:yandex.uz", "domain:yandex.cloud",
+	"domain:yandexcloud.net", "domain:yastatic.net", "domain:yango.com", "domain:ya.cc", "domain:yadi.sk",
+	"domain:vk.com", "domain:vk.me", "domain:vkuser.net", "domain:userapi.com", "domain:vk-cdn.net", "domain:mycdn.me",
+	"domain:2gis.com", "domain:wbstatic.net", "domain:avito.st", "domain:ozone.ru",
+}
 
 func decodeProfile(raw string) (*happProfile, bool) {
 	raw = strings.TrimSpace(raw)
