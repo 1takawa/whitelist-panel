@@ -7,7 +7,7 @@
 #       --panel-domain panel.example.com --reality-domain reality.example.com
 #
 #   ... upgrade                       обновить установленную панель до последнего релиза
-#   WHITELIST_VERSION=v0.29.0 ...     поставить конкретную версию вместо последней
+#   WHITELIST_VERSION=v0.32.0 ...     поставить конкретную версию вместо последней
 #   WHITELIST_REPO=владелец/имя       взять релизы из другого репозитория
 #
 # Все остальные параметры (--email, --admin-user, -y, --check и так далее) передаются основному установщику как есть.
@@ -38,7 +38,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 log "Загружаю $ASSET ($VERSION)"
 curl -fSL --retry 3 -o "$tmp/$ASSET" "$base/$ASSET" \
-  || die "не удалось скачать $base/$ASSET. Репозиторий должен быть открытым и содержать релиз"
+  || die "не удалось скачать $base/$ASSET. проверьте интернет и что у репозитория есть релиз"
 if curl -fsSL --retry 3 -o "$tmp/$ASSET.sha256" "$base/$ASSET.sha256"; then
   ( cd "$tmp" && sha256sum -c --quiet "$ASSET.sha256" ) || die "контрольная сумма архива не совпала"
   log "Контрольная сумма совпала"
