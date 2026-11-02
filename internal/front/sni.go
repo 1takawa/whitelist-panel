@@ -140,22 +140,22 @@ func (s *SNI) Apply(ctx context.Context, sites []Site) error {
 		for i := len(undo) - 1; i >= 0; i-- {
 			u := undo[i]
 			if u.had {
-				_ = os.WriteFile(u.path, u.data, 0o644)
+				_ = writeShared(u.path, u.data)
 			} else {
 				_ = os.Remove(u.path)
 			}
 		}
 	}
 
-	if err := os.MkdirAll(s.NginxDir, 0o755); err != nil {
+	if err := mkShared(s.NginxDir); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(s.SitesDir, 0o755); err != nil {
+	if err := mkShared(s.SitesDir); err != nil {
 		return err
 	}
 	write := func(path, data string) error {
 		remember(path)
-		return os.WriteFile(path, []byte(data), 0o644) // nginx and Caddy run as other users: the files must be readable
+		return writeShared(path, []byte(data))
 	}
 
 	// 1. The include lines in the installer's own files (once, with a backup).
@@ -248,10 +248,10 @@ func (s *SNI) patchFile(path string, edits []struct{ marker, line string }, reme
 		return nil
 	}
 	if _, err := os.Stat(path + ".anypanel-sni-bak"); errors.Is(err, os.ErrNotExist) {
-		_ = os.WriteFile(path+".anypanel-sni-bak", b, 0o644)
+		_ = writeShared(path+".anypanel-sni-bak", b)
 	}
 	remember(path)
-	return os.WriteFile(path, []byte(content), 0o644)
+	return writeShared(path, []byte(content))
 }
 
 func (s *SNI) appendOnce(path, line string, remember func(string)) error {
@@ -263,10 +263,28 @@ func (s *SNI) appendOnce(path, line string, remember func(string)) error {
 		return nil
 	}
 	if _, err := os.Stat(path + ".anypanel-sni-bak"); errors.Is(err, os.ErrNotExist) {
-		_ = os.WriteFile(path+".anypanel-sni-bak", b, 0o644)
+		_ = writeShared(path+".anypanel-sni-bak", b)
 	}
 	remember(path)
-	return os.WriteFile(path, []byte(strings.TrimRight(string(b), "\n")+"\n\n# Decoy sites of the cascades (managed by Whitelist Panel)\n"+line+"\n"), 0o644)
+	return writeShared(path, []byte(strings.TrimRight(string(b), "\n")+"\n\n# Decoy sites of the cascades (managed by Whitelist Panel)\n"+line+"\n"))
+}
+
+// writeShared writes a file that nginx and Caddy read. They run as other users than the panel, and the panel's service
+// runs with a umask of 0077, which would turn the 0644 of os.WriteFile into 0600: Caddy then silently loaded no decoy
+// sites at all. So the mode is set explicitly.
+func writeShared(path string, data []byte) error {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o644)
+}
+
+// mkShared makes a directory those programs can enter, for the same reason (and fixes one an older version made private).
+func mkShared(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.Chmod(dir, 0o755)
 }
 
 func lastLines(s string, n int) string {
