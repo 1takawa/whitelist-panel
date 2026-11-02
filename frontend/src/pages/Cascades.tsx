@@ -160,7 +160,7 @@ function CascadeForm({ servers, inbounds, onClose, onSaved }: { servers: ServerI
         {error && <Alert>{error}</Alert>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Отмена</Button>
-          <Button type="submit" variant="primary" disabled={busy || same || f.name.trim() === '' || f.exit === '' || mergeBlocked || splitBlocked}>{busy ? 'Создаём…' : 'Создать каскад'}</Button>
+          <Button type="submit" variant="primary" disabled={busy || same || f.name.trim() === '' || mergeBlocked || splitBlocked}>{busy ? 'Создаём…' : 'Создать каскад'}</Button>
         </div>
       </form>
     </Modal>
