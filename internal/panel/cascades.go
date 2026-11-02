@@ -686,8 +686,8 @@ func (s *Service) CheckCascadeDomainWith(ctx context.Context, domain, exceptCasc
 	if err != nil || len(addrs) == 0 {
 		return fail("у домена нет A-записи: создайте запись типа A на адрес %s и повторите проверку (после смены DNS может пройти несколько минут)", entryName)
 	}
-	res.Addresses = addrs
-	res.Main = want
+	res.Addresses = append([]string{}, addrs...) // never null in JSON: the page reads .length
+	res.Main = append([]string{}, want...)
 	if len(want) == 0 {
 		res.OK = true
 		res.Message = "домен свободен, но адрес " + entryName + " определить не удалось, DNS не сверен"

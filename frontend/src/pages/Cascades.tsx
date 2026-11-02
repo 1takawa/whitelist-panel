@@ -127,8 +127,8 @@ function CascadeForm({ servers, inbounds, onClose, onSaved }: { servers: ServerI
             </Field>
             {check && check.ok && <Alert tone={check.pending ? 'warn' : 'ok'}>{check.message}</Alert>}
             {check && !check.ok && <Alert tone="warn">{check.problem}</Alert>}
-            {check && check.addresses.length > 0 && (
-              <div className="mt-2 text-xs text-dim">DNS домена: {check.addresses.join(', ')}{check.main.length > 0 && <> · сервер A: {check.main.join(', ')}</>}</div>
+            {check && (check.addresses ?? []).length > 0 && (
+              <div className="mt-2 text-xs text-dim">DNS домена: {(check.addresses ?? []).join(', ')}{(check.main ?? []).length > 0 && <> · сервер A: {(check.main ?? []).join(', ')}</>}</div>
             )}
           </div>
         )}

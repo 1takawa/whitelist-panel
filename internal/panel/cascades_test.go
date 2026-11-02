@@ -755,3 +755,21 @@ func TestFreshDomainIsAcceptedBeforeDNSShowsIt(t *testing.T) {
 		t.Fatalf("with the flag: %+v %v", v, err)
 	}
 }
+
+// The page reads .length of both address lists: a null in the JSON (nil slice) would blank the whole page.
+func TestDomainCheckListsAreNeverNull(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _, _, dns := cascadeEnvFull(t)
+	// The main server's own names do not resolve, so there is nothing to compare the domain with.
+	delete(dns, "panel.example.com")
+	delete(dns, "reality.example.com")
+	dns["c1.example.com"] = []string{"203.0.113.10"}
+	got, err := svc.CheckCascadeDomain(ctx, "c1.example.com", "", "")
+	if err != nil || !got.OK {
+		t.Fatalf("%+v %v", got, err)
+	}
+	raw, _ := json.Marshal(got)
+	if strings.Contains(string(raw), "null") {
+		t.Fatalf("lists must be [] and not null: %s", raw)
+	}
+}
