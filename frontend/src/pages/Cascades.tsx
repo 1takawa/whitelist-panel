@@ -24,8 +24,10 @@ function CascadeForm({ servers, inbounds, onClose, onSaved }: { servers: ServerI
   const [busy, setBusy] = useState(false)
   const [check, setCheck] = useState<DomainCheck | null>(null)
   const [checking, setChecking] = useState(false)
+  const [created, setCreated] = useState('') // a domain the panel has just made in reg.ru: DNS may not show it yet
   const set = (p: Partial<Form>) => setF((x) => ({ ...x, ...p }))
   const domain = f.domain.trim().toLowerCase()
+  const dnsPending = created !== '' && created === domain
 
   const options = [{ id: MAIN, name: 'Основной сервер' }, ...servers.filter((s) => s.enable).map((s) => ({ id: s.id, name: `${s.flag ? `${s.flag} ` : ''}${s.name}` }))]
   // The exit connections: enabled VLESS connections of the chosen exit server that are not cascade nodes themselves.
@@ -40,11 +42,11 @@ function CascadeForm({ servers, inbounds, onClose, onSaved }: { servers: ServerI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servers.length])
 
-  async function checkDomain() {
+  async function checkDomain(name = domain, pending = dnsPending) {
     setChecking(true)
     setError('')
     try {
-      setCheck(await api<DomainCheck>('/api/cascades/check-domain', { method: 'POST', body: { domain, entryServerId: f.entry } }))
+      setCheck(await api<DomainCheck>('/api/cascades/check-domain', { method: 'POST', body: { domain: name, entryServerId: f.entry, dnsPending: pending } }))
     } catch (err) {
       setCheck(null)
       setError(errText(err))
@@ -60,7 +62,7 @@ function CascadeForm({ servers, inbounds, onClose, onSaved }: { servers: ServerI
     try {
       const res = await api<Saved<Cascade>>('/api/cascades', {
         method: 'POST',
-        body: { name: f.name.trim(), country: f.country, entryServerId: f.entry, exitServerId: f.exit, exitInboundId: f.exitInbound, mode: f.mode, domain: f.mode === 'split' ? domain : '' },
+        body: { name: f.name.trim(), country: f.country, entryServerId: f.entry, exitServerId: f.exit, exitInboundId: f.exitInbound, mode: f.mode, domain: f.mode === 'split' ? domain : '', dnsPending: f.mode === 'split' && dnsPending },
       })
       onSaved(res.warning ?? '')
     } catch (err) {
@@ -119,11 +121,11 @@ function CascadeForm({ servers, inbounds, onClose, onSaved }: { servers: ServerI
               hint="Нужен отдельный домен: по нему сервер A на порту 443 отличает каскад от своей обычной ноды. Панель сама добавит его в nginx. Проверка смотрит, что домен свободен и указывает на сервер A."
             >
               <div className="grid gap-2">
-                <DomainPicker value={f.domain} onChange={(v) => { set({ domain: v }); setCheck(null) }} placeholder="nl2.example.com" target={{ serverId: f.entry }} />
+                <DomainPicker value={f.domain} onChange={(v) => { set({ domain: v }); setCheck(null) }} placeholder="nl2.example.com" target={{ serverId: f.entry }} onCreated={(d) => { const n = d.trim().toLowerCase(); setCreated(n); void checkDomain(n, true) }} />
                 <div><Button disabled={checking || domain === ''} onClick={() => void checkDomain()}>{checking ? 'Проверяем…' : 'Проверить домен'}</Button></div>
               </div>
             </Field>
-            {check && check.ok && <Alert tone="ok">{check.message}</Alert>}
+            {check && check.ok && <Alert tone={check.pending ? 'warn' : 'ok'}>{check.message}</Alert>}
             {check && !check.ok && <Alert tone="warn">{check.problem}</Alert>}
             {check && check.addresses.length > 0 && (
               <div className="mt-2 text-xs text-dim">DNS домена: {check.addresses.join(', ')}{check.main.length > 0 && <> · сервер A: {check.main.join(', ')}</>}</div>

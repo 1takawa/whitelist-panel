@@ -18,7 +18,7 @@ export function DomainPicker({
   placeholder?: string
   target: { host?: string; serverId?: string }
   targetReady?: boolean // false while the address is not known yet (nothing to point the name at)
-  onCreated?: () => void
+  onCreated?: (domain: string) => void // the panel just made this name: DNS may not show it for a few minutes
 }) {
   const status = useLoad<RegRuStatus>('/api/regru')
   const connected = status.data?.connected === true
@@ -45,8 +45,8 @@ export function DomainPicker({
       const g = await api<RegRuGenerated>('/api/regru/subdomain', { method: 'POST', body: { host: target.host ?? '', serverId: target.serverId ?? '', zone } })
       onChange(g.domain)
       setDomains(null)
-      setNote({ ok: true, text: `Создана запись ${g.domain} → ${g.ip}. DNS обновляется до пары минут: если проверка домена не прошла сразу, повторите её чуть позже.` })
-      onCreated?.()
+      setNote({ ok: true, text: `Создана запись ${g.domain} → ${g.ip}. DNS обновляется до пары минут, поэтому сразу после создания нода может быть недоступна.` })
+      onCreated?.(g.domain)
     } catch (e) {
       setNote({ ok: false, text: errText(e) })
     } finally {

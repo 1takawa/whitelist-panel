@@ -724,3 +724,34 @@ func TestSyncSNIAtStartKnowsMainNodes(t *testing.T) {
 		t.Fatalf("a restart restores the files of a main node: %v %d %+v", err, sni.calls, sni.sites)
 	}
 }
+
+func TestFreshDomainIsAcceptedBeforeDNSShowsIt(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, exitServer, _, _ := cascadeEnvFull(t)
+
+	// Without the flag a domain DNS does not know is refused; with it (the panel just made the record) it is fine, marked pending.
+	if got, _ := svc.CheckCascadeDomain(ctx, "later.example.com", "", ""); got.OK {
+		t.Fatalf("%+v", got)
+	}
+	got, err := svc.CheckCascadeDomainWith(ctx, "later.example.com", "", "", true)
+	if err != nil || !got.OK || !got.Pending {
+		t.Fatalf("%+v %v", got, err)
+	}
+	// A record that already points elsewhere, or a name that is taken, is still refused.
+	if got, _ := svc.CheckCascadeDomainWith(ctx, "elsewhere.example.com", "", "", true); got.OK {
+		t.Fatalf("a wrong record is not pending: %+v", got)
+	}
+	if got, _ := svc.CheckCascadeDomainWith(ctx, "panel.example.com", "", "", true); got.OK {
+		t.Fatalf("a taken name is not pending: %+v", got)
+	}
+
+	in := split("later", "later.example.com", exitServer)
+	if _, _, err := svc.CreateCascade(ctx, in); !isInvalid(err) {
+		t.Fatalf("without the flag: %v", err)
+	}
+	in.DNSPending = true
+	v, _, err := svc.CreateCascade(ctx, in)
+	if err != nil || v == nil || v.Domain != "later.example.com" {
+		t.Fatalf("with the flag: %+v %v", v, err)
+	}
+}

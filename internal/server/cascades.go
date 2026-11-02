@@ -34,12 +34,13 @@ func (s *Server) checkCascadeDomain(w http.ResponseWriter, r *http.Request) {
 		Domain   string `json:"domain"`
 		ExceptID string `json:"exceptId"`
 		EntryID  string `json:"entryServerId"`
+		Pending  bool   `json:"dnsPending"`
 	}
 	in, ok := decode[req](w, r)
 	if !ok {
 		return
 	}
-	v, err := s.svc.CheckCascadeDomain(r.Context(), in.Domain, in.ExceptID, in.EntryID)
+	v, err := s.svc.CheckCascadeDomainWith(r.Context(), in.Domain, in.ExceptID, in.EntryID, in.Pending)
 	s.respond(w, v, err)
 }
 

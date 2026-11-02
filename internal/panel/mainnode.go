@@ -15,6 +15,8 @@ type MainNodeInput struct {
 	Domain  string `json:"domain"`  // an A record to this server
 	Name    string `json:"name"`    // optional: by default the domain
 	Country string `json:"country"` // optional: by default looked up from the domain's address
+
+	DNSPending bool `json:"dnsPending"` // the A record was only just created: do not wait for DNS to show it
 }
 
 // SetupMainNode creates the node and puts it into every client's subscription. Nginx is told to send the domain to the new
@@ -28,7 +30,7 @@ func (s *Service) SetupMainNode(ctx context.Context, in MainNodeInput) (*model.I
 	if domain == "" {
 		return nil, "", invalid("enter the domain of the node (an A record to this server)")
 	}
-	chk, err := s.CheckCascadeDomain(ctx, domain, "", "")
+	chk, err := s.CheckCascadeDomainWith(ctx, domain, "", "", in.DNSPending)
 	if err != nil {
 		return nil, "", err
 	}

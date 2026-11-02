@@ -324,6 +324,8 @@ function MainNodeModal({ onClose, onDone }: { onClose: () => void; onDone: (warn
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [created, setCreated] = useState('') // a domain the panel has just made in reg.ru: DNS may not show it yet
+  const pending = created !== '' && created === domain.trim().toLowerCase()
 
   // The domain is checked a moment after typing stops: free, and pointing at this server.
   useEffect(() => {
@@ -332,7 +334,7 @@ function MainNodeModal({ onClose, onDone }: { onClose: () => void; onDone: (warn
     if (d.length < 4 || !d.includes('.')) return
     setChecking(true)
     const t = setTimeout(() => {
-      api<DomainCheck>('/api/cascades/check-domain', { method: 'POST', body: { domain: d, entryServerId: '' } })
+      api<DomainCheck>('/api/cascades/check-domain', { method: 'POST', body: { domain: d, entryServerId: '', dnsPending: pending } })
         .then(setCheck, () => setCheck(null))
         .finally(() => setChecking(false))
     }, 600)
@@ -340,13 +342,13 @@ function MainNodeModal({ onClose, onDone }: { onClose: () => void; onDone: (warn
       clearTimeout(t)
       setChecking(false)
     }
-  }, [domain])
+  }, [domain, pending])
 
   async function submit() {
     setBusy(true)
     setError('')
     try {
-      const r = await api<{ warning?: string }>('/api/main-node', { method: 'POST', body: { domain: domain.trim(), name: name.trim(), country } })
+      const r = await api<{ warning?: string }>('/api/main-node', { method: 'POST', body: { domain: domain.trim(), name: name.trim(), country, dnsPending: pending } })
       onDone(r.warning)
     } catch (e) {
       setError(errText(e))
@@ -362,10 +364,10 @@ function MainNodeModal({ onClose, onDone }: { onClose: () => void; onDone: (warn
             Домен ноды
             <Hint text="Свой домен или поддомен с A-записью на адрес этого сервера. Панель сама выпустит сертификат, поставит сайт-заглушку и создаст подключение VLESS + REALITY. Кнопка «Создать» делает поддомен в reg.ru." />
           </span>
-          <DomainPicker value={domain} onChange={setDomain} placeholder="reality.example.com" target={{}} />
+          <DomainPicker value={domain} onChange={setDomain} placeholder="reality.example.com" target={{}} onCreated={(d) => setCreated(d.trim().toLowerCase())} />
         </div>
         {checking && <p className="text-sm text-faint">Проверяю домен…</p>}
-        {check && !checking && (check.ok ? <Alert tone="ok">{check.message ?? 'Домен подходит'}</Alert> : <Alert tone="warn">{check.problem}</Alert>)}
+        {check && !checking && (check.ok ? <Alert tone={check.pending ? 'warn' : 'ok'}>{check.message ?? 'Домен подходит'}</Alert> : <Alert tone="warn">{check.problem}</Alert>)}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Название" hint="Так нода называется в подписке. Пусто: по домену.">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={domain.trim() || 'Германия'} />

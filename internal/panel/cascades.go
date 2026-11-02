@@ -208,6 +208,7 @@ type CascadeInput struct {
 	ExitInboundID string `json:"exitInboundId"` // optional: by default the first suitable connection of the exit server
 	Mode          string `json:"mode"`          // CascadeMerge or CascadeSplit
 	Domain        string `json:"domain"`        // split: the REALITY domain of the new node (an A record to the entry server)
+	DNSPending    bool   `json:"dnsPending"`    // the domain's A record was only just created: do not wait for DNS to show it
 }
 
 var countryRe = regexp.MustCompile(`^[A-Za-z]{2}$`)
@@ -336,7 +337,7 @@ func (s *Service) CreateCascade(ctx context.Context, in CascadeInput) (*CascadeV
 		}
 		target = nodeDecoyTarget
 	}
-	chk, err := s.CheckCascadeDomain(ctx, domain, "", in.EntryServerID)
+	chk, err := s.CheckCascadeDomainWith(ctx, domain, "", in.EntryServerID, in.DNSPending)
 	if err != nil {
 		return nil, "", err
 	}
@@ -553,6 +554,7 @@ const (
 type DomainCheck struct {
 	OK        bool     `json:"ok"`
 	Problem   string   `json:"problem,omitempty"` // why not
+	Pending   bool     `json:"pending,omitempty"` // fine, but DNS does not show the record yet: the node may be unreachable for a few minutes
 	Message   string   `json:"message,omitempty"` // what was found when it is fine
 	Available bool     `json:"available"`         // the panel can set up nginx and Caddy for extra domains on this machine
 	Addresses []string `json:"addresses"`         // where the domain points
@@ -582,6 +584,12 @@ func sharesAny(a, b []string) bool {
 // main server). It looks at what the panel already knows (its own domains, servers, connections, other cascades) and at
 // DNS. exceptCascade is a cascade being edited.
 func (s *Service) CheckCascadeDomain(ctx context.Context, domain, exceptCascade, entryServerID string) (*DomainCheck, error) {
+	return s.CheckCascadeDomainWith(ctx, domain, exceptCascade, entryServerID, false)
+}
+
+// CheckCascadeDomainWith is CheckCascadeDomain that, with dnsPending (the A record was just created by the panel), accepts a
+// domain DNS does not know yet. A record that already points somewhere else is still refused.
+func (s *Service) CheckCascadeDomainWith(ctx context.Context, domain, exceptCascade, entryServerID string, dnsPending bool) (*DomainCheck, error) {
 	d := strings.ToLower(strings.TrimSpace(domain))
 	res := &DomainCheck{Available: entryServerID != "" || s.SNI != nil, Addresses: []string{}, Main: []string{}}
 	fail := func(format string, a ...any) (*DomainCheck, error) {
@@ -669,6 +677,12 @@ func (s *Service) CheckCascadeDomain(ctx context.Context, domain, exceptCascade,
 		}
 	}
 	addrs, err := s.lookup(ctx, d)
+	if (err != nil || len(addrs) == 0) && dnsPending {
+		res.OK = true
+		res.Pending = true
+		res.Message = "запись только что создана, DNS её ещё не показывает. Ноду можно ставить сразу, но первые минуты она может быть недоступна, пока обновится DNS и выпустится сертификат"
+		return res, nil
+	}
 	if err != nil || len(addrs) == 0 {
 		return fail("у домена нет A-записи: создайте запись типа A на адрес %s и повторите проверку (после смены DNS может пройти несколько минут)", entryName)
 	}

@@ -465,6 +465,7 @@ export type DomainCheck = {
   message?: string
   problem?: string
   usedBy?: string
+  pending?: boolean // fine, but DNS does not show the record yet
   addresses: string[]
   main: string[]
 }
