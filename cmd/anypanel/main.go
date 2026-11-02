@@ -140,6 +140,11 @@ func cmdServe(log *slog.Logger, args []string) error {
 			}
 		}()
 	}
+	go func() {
+		if err := svc.RepairCascades(ctx); err != nil {
+			log.Warn("cascades: the check for interrupted creations failed", "err", err)
+		}
+	}()
 	svc.Version = version
 	svc.RegRuBase = os.Getenv("REGRU_API_URL") // empty = the real REG.RU API; set to a stand-in only for testing
 	sampler := sysinfo.NewSampler()

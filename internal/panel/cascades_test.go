@@ -773,3 +773,42 @@ func TestDomainCheckListsAreNeverNull(t *testing.T) {
 		t.Fatalf("lists must be [] and not null: %s", raw)
 	}
 }
+
+func TestInterruptedCascadeCreationIsRepairedAtStart(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, exitServer, sni, _ := cascadeEnvFull(t)
+	v, _, err := svc.CreateCascade(ctx, split("half", "c1.example.com", exitServer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The request died after the entry connection was made: the cascade is saved without a link to it.
+	c, _ := svc.Store.GetCascade(ctx, v.ID)
+	entryID := c.InboundID
+	c.InboundID = ""
+	if err := svc.Store.PutCascade(ctx, *c); err != nil {
+		t.Fatal(err)
+	}
+	// A second one died before anything was built.
+	ghost := model.Cascade{ID: "ghost", Name: "ghost", Domain: "c2.example.com", ExitServerID: exitServer}
+	if err := svc.Store.PutCascade(ctx, ghost); err != nil {
+		t.Fatal(err)
+	}
+	before := sni.calls
+	if err := svc.RepairCascades(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fixed, err := svc.Store.GetCascade(ctx, v.ID)
+	if err != nil || fixed.InboundID != entryID {
+		t.Fatalf("the link to the entry connection is restored: %+v %v", fixed, err)
+	}
+	if sni.calls != before+1 {
+		t.Fatal("nginx is told about the domain again")
+	}
+	if _, err := svc.Store.GetCascade(ctx, "ghost"); err == nil {
+		t.Fatal("a cascade with nothing built is a leftover and goes")
+	}
+	// Nothing left to repair: a second pass does nothing.
+	if err := svc.RepairCascades(ctx); err != nil || sni.calls != before+1 {
+		t.Fatalf("%v %d", err, sni.calls)
+	}
+}

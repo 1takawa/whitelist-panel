@@ -203,7 +203,9 @@ func (s *Server) createInbound(w http.ResponseWriter, r *http.Request) {
 		AddToClients *bool `json:"addToClients"`
 	}
 	_ = json.Unmarshal(body, &probe)
-	v, err := s.svc.CreateInboundFor(r.Context(), in, probe.AddToClients == nil || *probe.AddToClients)
+	ctx, cancel := detached(r)
+	defer cancel()
+	v, err := s.svc.CreateInboundFor(ctx, in, probe.AddToClients == nil || *probe.AddToClients)
 	s.finish(w, v, err)
 }
 
@@ -212,12 +214,16 @@ func (s *Server) updateInbound(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	v, err := s.svc.UpdateInbound(r.Context(), r.PathValue("id"), in)
+	ctx, cancel := detached(r)
+	defer cancel()
+	v, err := s.svc.UpdateInbound(ctx, r.PathValue("id"), in)
 	s.finish(w, v, err)
 }
 
 func (s *Server) deleteInbound(w http.ResponseWriter, r *http.Request) {
-	s.finish(w, nil, s.svc.DeleteInbound(r.Context(), r.PathValue("id")))
+	ctx, cancel := detached(r)
+	defer cancel()
+	s.finish(w, nil, s.svc.DeleteInbound(ctx, r.PathValue("id")))
 }
 
 func (s *Server) realityKeys(w http.ResponseWriter, _ *http.Request) {

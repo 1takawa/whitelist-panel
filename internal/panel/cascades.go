@@ -792,6 +792,51 @@ func (s *Service) syncSNI(ctx context.Context, entryServerID string) error {
 	return nil
 }
 
+// RepairCascades finishes what an interrupted creation left half done, at start-up. A cascade is saved before its entry
+// connection and linked to it after, so a request that died in between (the browser went away) leaves a cascade that
+// points at nothing. When its connection was made the link is restored and the entry server's nginx told about the
+// domain; when nothing was built the record is a leftover and goes.
+func (s *Service) RepairCascades(ctx context.Context) error {
+	list, err := s.Store.ListCascades(ctx)
+	if err != nil {
+		return err
+	}
+	all, err := s.Store.ListInbounds(ctx)
+	if err != nil {
+		return err
+	}
+	for _, c := range list {
+		if c.InboundID != "" {
+			continue
+		}
+		var entry *model.Inbound
+		for i := range all {
+			if all[i].CascadeID == c.ID {
+				entry = &all[i]
+				break
+			}
+		}
+		if entry == nil {
+			if err := s.Store.DeleteCascade(ctx, c.ID); err == nil && s.Log != nil {
+				s.Log.Warn("cascade: removed the leftover of an interrupted creation", "cascade", c.Name)
+			}
+			continue
+		}
+		c.InboundID = entry.ID
+		if err := s.Store.PutCascade(ctx, c); err != nil {
+			return err
+		}
+		if s.Log != nil {
+			s.Log.Warn("cascade: finished an interrupted creation", "cascade", c.Name, "domain", c.Domain)
+		}
+		if err := s.syncSNI(ctx, c.EntryServerID); err != nil && s.Log != nil {
+			s.Log.Warn("cascade: the domain could not be added to nginx", "cascade", c.Name, "err", err)
+		}
+		s.regruAssign(ctx, c.Domain, "", c.ID)
+	}
+	return nil
+}
+
 // SyncSNI is syncSNI for start-up: it restores the main server's files if they were lost. Without cascades that have a
 // domain of their own there it leaves nginx and Caddy untouched. A failure is only logged by the caller.
 func (s *Service) SyncSNI(ctx context.Context) error {
