@@ -150,11 +150,13 @@ button:disabled { cursor: not-allowed; }
 @keyframes ap-drift { to { transform: translateX(-30%) translateY(40px); } }
 @keyframes ap-row { from { opacity: 0; transform: translateY(4px); } }
 
-.ap-enter { animation: ap-enter 0.42s var(--ease) both; }
-.ap-pop { animation: ap-pop 0.22s var(--ease) both; transform-origin: top right; }
-.ap-grow-x { transform-origin: left; animation: ap-grow-x 0.9s var(--ease) both; }
-.ap-rise { transform-origin: bottom; animation: ap-rise 0.7s var(--ease) both; }
-.ap-row { animation: ap-row 0.4s var(--ease) both; }
+.ap-enter { animation: ap-enter 0.42s var(--ease) backwards; }
+.ap-pop { animation: ap-pop 0.22s var(--ease) backwards; transform-origin: top right; }
+.ap-grow-x { transform-origin: left; animation: ap-grow-x 0.9s var(--ease) backwards; }
+.ap-rise { transform-origin: bottom; animation: ap-rise 0.7s var(--ease) backwards; }
+/* "backwards", not "both": a transform that keeps filling after the animation would make the card the containing block of
+   position:fixed popovers inside it (the "⋯" menus) and misplace them. */
+.ap-row { animation: ap-row 0.4s var(--ease) backwards; }
 .ap-shake { animation: ap-shake 0.4s var(--ease); }
 .ap-pulse { animation: ap-pulse 2s ease-in-out infinite; }
 

@@ -1,9 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router'
 import { api, ApiError } from '../api'
 import { Icon } from '../components/Icon'
-import { ActionMenu, Alert, Badge, Button, Card, CopyButton, Field, IconButton, Input, Modal, PageHeader, Switch, Toggle, type MenuItem } from '../components/ui'
+import { ActionMenu, Alert, Badge, Button, Card, CopyButton, Field, Hint, IconButton, Input, Modal, PageHeader, Switch, Toggle, type MenuItem } from '../components/ui'
 import { ask } from '../components/confirm'
 import CountryPicker from '../components/CountryPicker'
+import { DomainPicker } from '../components/DomainPicker'
 import { useLoad } from '../hooks'
 import { formatBytes, formatUptime } from '../lib'
 import type { Dashboard, DomainCheck, Inbound, ServerClient, ServerInfo } from '../types'
@@ -187,7 +189,7 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
 
 // One server as a card: who it is and whether it is up on top, its numbers in the middle, switch and delete at the bottom.
 // Everything else (restart, agent upgrade, ports, REALITY site, token, settings) is rare, so it lives in the "⋯" menu.
-function ServerCard({ title, flag, code, badge, state, ping, first, uptime, load, online, footer, actions, children }: {
+function ServerCard({ title, flag, code, badge, state, ping, first, uptime, load, online, secondLabel, footer, actions, children }: {
   title: string
   flag?: string
   code?: string
@@ -198,6 +200,7 @@ function ServerCard({ title, flag, code, badge, state, ping, first, uptime, load
   uptime: number
   load: string
   online: number | string
+  secondLabel?: string // what `online` is called: "Онлайн" unless the card shows something else (a node's traffic)
   footer: ReactNode
   actions: ReactNode
   children?: ReactNode
@@ -224,7 +227,7 @@ function ServerCard({ title, flag, code, badge, state, ping, first, uptime, load
       </div>
       <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line px-5 py-4">
         <Stat label={first.label}>{first.value}</Stat>
-        <Stat label="Онлайн">{online}</Stat>
+        <Stat label={secondLabel ?? 'Онлайн'}>{online}</Stat>
         <Stat label="Аптайм">{state === 'up' && uptime > 0 ? formatUptime(uptime) : '—'}</Stat>
         <Stat label="Нагрузка">{state === 'up' ? load : '—'}</Stat>
       </div>
@@ -354,9 +357,13 @@ function MainNodeModal({ onClose, onDone }: { onClose: () => void; onDone: (warn
   return (
     <Modal title="Поставить ноду на этом сервере" onClose={onClose} persistent>
       <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); if (domain.trim() && !busy) void submit() }}>
-        <Field label="Домен ноды" hint="Свой домен или поддомен с A-записью на адрес этого сервера. Панель сама выпустит сертификат, поставит сайт-заглушку и создаст подключение VLESS + REALITY.">
-          <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="reality.example.com" autoFocus spellCheck={false} />
-        </Field>
+        <div>
+          <span className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium">
+            Домен ноды
+            <Hint text="Свой домен или поддомен с A-записью на адрес этого сервера. Панель сама выпустит сертификат, поставит сайт-заглушку и создаст подключение VLESS + REALITY. Кнопка «Создать» делает поддомен в reg.ru." />
+          </span>
+          <DomainPicker value={domain} onChange={setDomain} placeholder="reality.example.com" target={{}} />
+        </div>
         {checking && <p className="text-sm text-faint">Проверяю домен…</p>}
         {check && !checking && (check.ok ? <Alert tone="ok">{check.message ?? 'Домен подходит'}</Alert> : <Alert tone="warn">{check.problem}</Alert>)}
         <div className="grid gap-3 sm:grid-cols-2">
@@ -377,17 +384,76 @@ function MainNodeModal({ onClose, onDone }: { onClose: () => void; onDone: (warn
   )
 }
 
-// The main server: the machine the panel itself runs on. Its Xray is tuned the same way as every node's.
-function LocalServer() {
-  const st = useLoad<XrayStatus>('/api/xray/status')
-  const dash = useLoad<Dashboard>('/api/dashboard')
-  const nodes = useLoad<Inbound[]>('/api/inbounds')
-  const [open, setOpen] = useState(false)
-  const [adding, setAdding] = useState(false)
+// A node of the main server: a REALITY connection on a domain of its own, shown like every other server of the list.
+const LEAD_FLAG = /^[\u{1F1E6}-\u{1F1FF}]{2}\s*/u
+const isoOf = (flag: string) => [...flag].map((c) => String.fromCharCode((c.codePointAt(0) ?? 0) - 0x1f1e6 + 65)).join('')
+
+function MainNodeCard({ n, d, x, onChanged, onNote }: { n: Inbound; d: Dashboard | null; x: XrayStatus | null; onChanged: () => void; onNote: (text: string) => void }) {
+  const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const x = st.data
-  const d = dash.data
-  const own = (nodes.data ?? []).filter((n) => !!n.nodeDomain && !n.serverId)
+  const nav = useNavigate()
+  const lead = n.remark.match(LEAD_FLAG)
+  const flag = lead ? lead[0].trim() : ''
+  const name = n.remark.replace(LEAD_FLAG, '')
+  const state = !n.enable ? 'off' : x && !x.running ? 'down' : 'up'
+
+  async function act(fn: () => Promise<void>) {
+    setBusy(true)
+    setMsg(null)
+    try {
+      await fn()
+      onChanged()
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ServerCard
+      title={name}
+      flag={flag}
+      code={flag ? isoOf(flag) : undefined}
+      badge="Нода"
+      state={state}
+      first={{ label: 'Адрес', value: `${n.nodeDomain}:443` }}
+      secondLabel="Трафик"
+      online={formatBytes(n.up + n.down)}
+      uptime={d?.system.uptimeSeconds ?? 0}
+      load={d ? loadText({ ...d.system }) : '—'}
+      footer={x?.version ? `Xray ${x.version} · на сервере панели` : 'на сервере панели'}
+      actions={
+        <>
+          <Switch checked={n.enable} disabled={busy} label={n.enable ? 'Выключить ноду' : 'Включить ноду'} onChange={(v) => void act(async () => { await api(`/api/inbounds/${n.id}`, { method: 'PUT', body: { ...n, enable: v } }) })} />
+          <IconButton
+            icon="trash"
+            label="Удалить"
+            tone="danger"
+            disabled={busy}
+            onClick={async () => {
+              if (await ask(`Удалить ноду «${name}»? Она пропадёт из подписок клиентов, домен уберётся из nginx.`, { confirmLabel: 'Удалить' })) {
+                void act(async () => {
+                  const r = await api<{ warning?: string }>(`/api/inbounds/${n.id}`, { method: 'DELETE' })
+                  if (r?.warning) onNote(r.warning)
+                })
+              }
+            }}
+          />
+          <ActionMenu items={[{ icon: 'pencil', label: 'Изменить подключение', onClick: () => nav('/inbounds') }]} />
+        </>
+      }
+    >
+      {msg && <div className="px-5 pb-4"><Alert tone={msg.ok ? 'ok' : 'bad'}>{msg.text}</Alert></div>}
+    </ServerCard>
+  )
+}
+
+// The main server: the machine the panel itself runs on. Its Xray is tuned the same way as every node's. The node it can
+// host on a domain of its own is a card of its own (MainNodeCard); the button is there until that node exists.
+function LocalServer({ d, x, canAddNode, onAddNode, onChanged }: { d: Dashboard | null; x: XrayStatus | null; canAddNode: boolean; onAddNode: () => void; onChanged: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const items: MenuItem[] = [
     { icon: 'sliders', label: 'Настройки Xray', onClick: () => setOpen(true) },
     {
@@ -396,7 +462,7 @@ function LocalServer() {
       onClick: () => {
         setMsg(null)
         api('/api/xray/restart', { method: 'POST' }).then(
-          () => { setMsg({ ok: true, text: 'Xray перезапущен.' }); void st.reload() },
+          () => { setMsg({ ok: true, text: 'Xray перезапущен.' }); onChanged() },
           (e) => setMsg({ ok: false, text: errText(e) }),
         )
       },
@@ -414,35 +480,23 @@ function LocalServer() {
       footer={x?.lastError ? <span className="text-blocked">{x.lastError}</span> : x?.version ? `Xray ${x.version}${x.running ? '' : ' · остановлен'}` : x && !x.installed ? 'Xray не установлен' : ''}
       actions={
         <>
-          <Button variant="primary" className="h-8 !py-0" onClick={() => setAdding(true)}><Icon name="plus" className="size-4" />Поставить ноду</Button>
+          {canAddNode && <Button variant="primary" className="h-8 !py-0" onClick={onAddNode}><Icon name="plus" className="size-4" />Поставить ноду</Button>}
           <ActionMenu items={items} />
         </>
       }
     >
-      {own.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 border-t border-line px-5 py-3">
-          {own.map((n) => <span key={n.id} className="rounded-md bg-surface-2 px-2 py-0.5 font-mono text-[11.5px] text-dim" title={n.remark}>{n.nodeDomain}</span>)}
-        </div>
-      )}
       {msg && <div className="px-5 pb-4"><Alert tone={msg.ok ? 'ok' : 'bad'}>{msg.text}</Alert></div>}
-      {adding && (
-        <MainNodeModal
-          onClose={() => setAdding(false)}
-          onDone={(w) => {
-            setAdding(false)
-            setMsg(w ? { ok: false, text: w } : { ok: true, text: 'Нода поставлена и добавлена в подписки всех клиентов.' })
-            void nodes.reload()
-            void dash.reload()
-          }}
-        />
-      )}
-      {open && <XrayProfileModal id="local" title="главный сервер" onClose={() => { setOpen(false); void st.reload() }} />}
+      {open && <XrayProfileModal id="local" title="главный сервер" onClose={() => { setOpen(false); onChanged() }} />}
     </ServerCard>
   )
 }
 
 export default function Servers() {
   const list = useLoad<ServerInfo[]>('/api/servers')
+  const dash = useLoad<Dashboard>('/api/dashboard')
+  const xst = useLoad<XrayStatus>('/api/xray/status')
+  const ins = useLoad<Inbound[]>('/api/inbounds')
+  const [addingNode, setAddingNode] = useState(false)
   const [editing, setEditing] = useState<ServerInfo | 'new' | null>(null)
   const [shown, setShown] = useState<{ token: string; server: ServerInfo } | null>(null)
   const [installing, setInstalling] = useState(false)
@@ -453,14 +507,26 @@ export default function Servers() {
   const [note, setNote] = useState('') // a warning that has to outlive the row it came from (the row is gone)
 
   const reload = list.reload
+  const reloadDash = dash.reload
+  const reloadIns = ins.reload
+  const reloadXray = xst.reload
   useEffect(() => {
-    const t = setInterval(() => void reload(), 10000)
+    const t = setInterval(() => {
+      void reload()
+      void reloadDash()
+      void reloadIns()
+      void reloadXray()
+    }, 10000)
     return () => clearInterval(t)
-  }, [reload])
+  }, [reload, reloadDash, reloadIns, reloadXray])
 
   const rows = list.data ?? []
   const up = rows.filter((s) => s.enable && s.online)
   const down = rows.filter((s) => !(s.enable && s.online))
+  const mainNodes = (ins.data ?? []).filter((n) => !!n.nodeDomain && !n.serverId)
+  const nodesUp = mainNodes.filter((n) => n.enable)
+  const nodesOff = mainNodes.filter((n) => !n.enable)
+  const nodeCard = (n: Inbound) => <MainNodeCard key={n.id} n={n} d={dash.data} x={xst.data} onChanged={() => { void reloadIns(); void reloadDash() }} onNote={setNote} />
   const card = (s: ServerInfo) => (
     <Row key={s.id} s={s} onChanged={() => void list.reload()} onNote={setNote} onEdit={() => setEditing(s)} onToken={(token) => setShown({ token, server: s })} onUpgrade={setUpgradeJob} onFirewall={setFirewallJob} onReality={() => setRealityFor(s)} />
   )
@@ -471,16 +537,31 @@ export default function Servers() {
         <Button variant="primary" onClick={() => setInstalling(true)}>Установить ноду</Button>
       </PageHeader>      {list.error && <div className="mb-3"><Alert>{list.error}</Alert></div>}
       {note && <div className="mb-3"><Alert tone="warn"><div className="flex items-start justify-between gap-3"><span>{note}</span><Button variant="ghost" onClick={() => setNote('')}>Скрыть</Button></div></Alert></div>}
-      <h2 className="mb-3 text-sm font-semibold">В сети <span className="ml-1 text-faint tabular-nums">{up.length + 1}</span></h2>
+      <h2 className="mb-3 text-sm font-semibold">В сети <span className="ml-1 text-faint tabular-nums">{up.length + nodesUp.length + 1}</span></h2>
       <div className="grid gap-3 min-[900px]:grid-cols-2">
-        <LocalServer />
+        <LocalServer d={dash.data} x={xst.data} canAddNode={mainNodes.length === 0 && ins.data !== null} onAddNode={() => setAddingNode(true)} onChanged={() => { void reloadXray(); void reloadDash() }} />
+        {nodesUp.map(nodeCard)}
         {up.map(card)}
       </div>
-      {down.length > 0 && (
+      {down.length + nodesOff.length > 0 && (
         <>
-          <h2 className="mb-3 mt-7 text-sm font-semibold">Не в сети <span className="ml-1 text-faint tabular-nums">{down.length}</span></h2>
-          <div className="grid gap-3 min-[900px]:grid-cols-2">{down.map(card)}</div>
+          <h2 className="mb-3 mt-7 text-sm font-semibold">Не в сети <span className="ml-1 text-faint tabular-nums">{down.length + nodesOff.length}</span></h2>
+          <div className="grid gap-3 min-[900px]:grid-cols-2">
+            {nodesOff.map(nodeCard)}
+            {down.map(card)}
+          </div>
         </>
+      )}
+      {addingNode && (
+        <MainNodeModal
+          onClose={() => setAddingNode(false)}
+          onDone={(w) => {
+            setAddingNode(false)
+            if (w) setNote(w)
+            void reloadIns()
+            void reloadDash()
+          }}
+        />
       )}
       {list.data && rows.length === 0 && <p className="mt-4 text-sm text-faint">Дополнительных серверов пока нет</p>}
 
