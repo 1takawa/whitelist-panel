@@ -10,10 +10,24 @@ import (
 type AutoOptions struct {
 	Name        string
 	Last        bool // after the servers instead of before them
+	Position    int  // otherwise: before the first server whose Order is at least this
 	URL         string
 	IntervalSec int
 	TimeoutSec  int
 	ToleranceMs int
+}
+
+// autoAt is where the automatic node stands among the endpoints: an index into eps, len(eps) meaning after all of them.
+func autoAt(eps []links.Endpoint, a *AutoOptions) int {
+	if a.Last {
+		return len(eps)
+	}
+	for i, e := range eps {
+		if e.Order >= a.Position {
+			return i
+		}
+	}
+	return len(eps)
 }
 
 // autoMembers are the endpoints that take part in the automatic node.

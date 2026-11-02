@@ -17,6 +17,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /api/inbounds", a(s.listInbounds))
 	mux.HandleFunc("POST /api/inbounds", a(s.createInbound))
+	mux.HandleFunc("POST /api/inbounds/order", a(s.orderInbounds))
 	mux.HandleFunc("GET /api/inbounds/{id}", a(s.getInbound))
 	mux.HandleFunc("PUT /api/inbounds/{id}", a(s.updateInbound))
 	mux.HandleFunc("DELETE /api/inbounds/{id}", a(s.deleteInbound))
@@ -168,6 +169,17 @@ func (s *Server) respond(w http.ResponseWriter, v any, err error) {
 func (s *Server) listInbounds(w http.ResponseWriter, r *http.Request) {
 	v, err := s.svc.ListInbounds(r.Context())
 	s.respond(w, v, err)
+}
+
+// orderInbounds saves the order the connections (and the automatic node) were dragged into.
+func (s *Server) orderInbounds(w http.ResponseWriter, r *http.Request) {
+	in, ok := decode[struct {
+		Order []string `json:"order"`
+	}](w, r)
+	if !ok {
+		return
+	}
+	s.respond(w, map[string]bool{"ok": true}, s.svc.ReorderInbounds(r.Context(), in.Order))
 }
 
 func (s *Server) getInbound(w http.ResponseWriter, r *http.Request) {

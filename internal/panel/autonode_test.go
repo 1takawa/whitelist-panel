@@ -2,6 +2,7 @@ package panel
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"anypanel2/internal/model"
@@ -126,6 +127,86 @@ func TestAppPreviewListsTheAutoNode(t *testing.T) {
 	for _, s := range exp.Servers {
 		if s.Protocol == "auto" {
 			t.Fatal("an expired subscriber sees only the info node")
+		}
+	}
+}
+
+func TestDraggedOrderSetsTheSubscriptionOrderAndTheAutoNodePlace(t *testing.T) {
+	svc, _, _ := newService(t)
+	ctx := context.Background()
+	set, _ := svc.GetSettings(ctx)
+	set.PanelDomain = "panel.example.com"
+	set.Subscription.AutoNode = model.AutoNodeSettings{Enable: true, Name: "A", ProbeURL: "https://x/", IntervalSec: 5, TimeoutSec: 2}
+	if _, err := svc.PutSettings(ctx, *set); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for i, remark := range []string{"one", "two", "three"} {
+		in := wsInbound(10001 + i)
+		in.Remark = remark
+		v, err := svc.CreateInbound(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, v.ID)
+	}
+	one, two, three := ids[0], ids[1], ids[2]
+	remarks := func() []string {
+		cl, err := svc.CreateClient(ctx, model.Client{Email: "u" + t.Name() + string(rune('a'+len(ids))), Enable: true, InboundIDs: ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = svc.DeleteClient(ctx, cl.ID) }()
+		sub, err := svc.PublicSubscription(ctx, cl.SubID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, l := range sub.Links {
+			out = append(out, l.Remark)
+		}
+		return out
+	}
+	if got := strings.Join(remarks(), ","); got != "one,two,three" {
+		t.Fatalf("new connections go to the end of the list: %s", got)
+	}
+
+	if err := svc.ReorderInbounds(ctx, []string{three, AutoNodeSlot, one, two}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(remarks(), ","); got != "three,one,two" {
+		t.Fatalf("the dragged order is the subscription order: %s", got)
+	}
+	got, _ := svc.GetSettings(ctx)
+	if a := got.Subscription.AutoNode; a.Position != 1 || a.Last {
+		t.Fatalf("the automatic node sits between the first and the second: %+v", a)
+	}
+	if err := svc.ReorderInbounds(ctx, []string{two, one, three, AutoNodeSlot}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := svc.GetSettings(ctx); !got.Subscription.AutoNode.Last || got.Subscription.AutoNode.Position != 3 {
+		t.Fatalf("dragged to the end: %+v", got.Subscription.AutoNode)
+	}
+
+	// A new connection still goes to the end of the list.
+	in := wsInbound(10009)
+	in.Remark = "four"
+	v, err := svc.CreateInbound(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids = append(ids, v.ID)
+	if got := strings.Join(remarks(), ","); got != "two,one,three,four" {
+		t.Fatalf("%s", got)
+	}
+
+	for name, bad := range map[string][]string{
+		"missing":   {two, one},
+		"unknown":   {two, one, three, ids[3], "nope"},
+		"duplicate": {two, two, one, three, ids[3]},
+	} {
+		if err := svc.ReorderInbounds(ctx, bad); !isInvalid(err) {
+			t.Fatalf("%s: %v", name, err)
 		}
 	}
 }

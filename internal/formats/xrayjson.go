@@ -90,13 +90,8 @@ func XrayJSON(eps []links.Endpoint, opt JSONOptions) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			switch {
-			case opt.Auto.Last:
-				cfgs = append(cfgs, ac)
-			default:
-				at := len(opt.Info)
-				cfgs = append(cfgs[:at], append([]any{ac}, cfgs[at:]...)...)
-			}
+			at := len(opt.Info) + autoAt(eps, opt.Auto)
+			cfgs = append(cfgs[:at], append([]any{ac}, cfgs[at:]...)...)
 		}
 	}
 	if len(cfgs) == 0 {

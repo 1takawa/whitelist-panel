@@ -153,3 +153,46 @@ func TestClashAutoNodeGroup(t *testing.T) {
 		t.Fatal("without the feature the old group stays")
 	}
 }
+
+func TestAutoNodeStandsWhereItWasPlaced(t *testing.T) {
+	list := eps()
+	for i := range list {
+		list[i].Order = i * 10
+	}
+	names := func(cfgs []map[string]any) []string {
+		var out []string
+		for _, c := range cfgs {
+			out = append(out, c["remarks"].(string))
+		}
+		return out
+	}
+	for _, c := range []struct {
+		pos  int
+		last bool
+		at   int
+	}{{0, false, 0}, {5, false, 1}, {10, false, 1}, {11, false, 2}, {999, false, len(list)}, {0, true, len(list)}} {
+		a := autoOpt()
+		a.Position, a.Last = c.pos, c.last
+		got := names(decodeConfigs(t, mustJSON(t, list, JSONOptions{Auto: a, Info: []string{"info"}})))
+		if len(got) != len(list)+2 || got[1+c.at] != a.Name {
+			t.Fatalf("position %d last %v: want the node at %d, got %v", c.pos, c.last, c.at, got)
+		}
+	}
+	raw, err := Clash(list, ClashOptions{Auto: &AutoOptions{Name: "A", Position: 10, URL: "https://x/", IntervalSec: 5, TimeoutSec: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Groups []struct {
+			Name    string   `yaml:"name"`
+			Proxies []string `yaml:"proxies"`
+		} `yaml:"proxy-groups"`
+	}
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	sel := cfg.Groups[0].Proxies
+	if len(sel) < 3 || sel[1] != "A" {
+		t.Fatalf("the group stands second among the choices: %v", sel)
+	}
+}

@@ -50,9 +50,7 @@ export default function AutoNodeTab({ value: a, onChange, jsonEnabled, clashEnab
               <Field label="Название" hint="Так запись называется в списке серверов приложения">
                 <Input value={a.name} maxLength={60} onChange={(e) => onChange({ name: e.target.value })} />
               </Field>
-              <div className="flex items-end pb-2">
-                <Toggle label="Показывать после серверов, а не перед ними" checked={a.last} onChange={(v) => onChange({ last: v })} />
-              </div>
+              <p className="self-end pb-2 text-sm text-dim">Место в списке задаётся перетаскиванием на странице «Подключения».</p>
             </div>
             <p className="text-xs text-dim">
               В автоузел входят все включённые серверы клиента. Исключить подключение можно в его настройках («Основное» → «Не включать в автоузел»); оно останется отдельной записью.

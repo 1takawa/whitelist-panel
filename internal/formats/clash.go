@@ -163,17 +163,14 @@ func Clash(eps []links.Endpoint, opt ClashOptions) ([]byte, error) {
 
 	// The group the app picks from: every server, probed every 5 minutes, unless the automatic node is configured.
 	group := clashGroup{Name: groupName, Type: "url-test", Proxies: names, URL: probeURL, Interval: 300, Tolerance: 50}
-	last := false
+	at := 0 // where the group stands among the choices (after the info entries)
 	if a := opt.Auto; a != nil && len(autoNames) >= 2 {
 		lazy := false
 		group.Proxies, group.URL, group.Interval, group.Tolerance = autoNames, a.URL, a.IntervalSec, a.ToleranceMs
 		group.Timeout, group.Lazy = a.TimeoutSec*1000, &lazy
-		last = a.Last
+		at = len(opt.Info) + autoAt(eps, a)
 	}
-	choices := append([]string{group.Name}, append(append([]string{}, names...), "DIRECT")...)
-	if last {
-		choices = append(append(append([]string{}, names...), group.Name), "DIRECT")
-	}
+	choices := append(append(append([]string{}, names[:at]...), group.Name), append(append([]string{}, names[at:]...), "DIRECT")...)
 	cfg := clashConfig{
 		MixedPort: 7890, Mode: "rule", LogLevel: "info", Proxies: proxies,
 		ProxyGroups: []clashGroup{{Name: proxyGroup, Type: "select", Proxies: choices}, group},

@@ -175,6 +175,7 @@ export type AutoNodeSettings = {
   enable: boolean
   name: string
   last: boolean
+  position: number
   keepLinks: boolean
   probeUrl: string
   intervalSec: number

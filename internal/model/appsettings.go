@@ -163,6 +163,9 @@ type AutoNodeSettings struct {
 	Enable bool   `json:"enable" bson:"enable"`
 	Name   string `json:"name" bson:"name"`
 	Last   bool   `json:"last" bson:"last"` // after the servers instead of before them
+	// Position is the place of the entry in the list: before the first server whose connection has a SortOrder of at least
+	// this (Last overrides it). Dragging the rows on the Connections page sets it together with the connections' SortOrder.
+	Position int `json:"position" bson:"position"`
 	// KeepLinks stops the automatic switch of Happ and INCY to the JSON format on the main subscription address. The switch
 	// is what makes the entry appear for them (a plain list of links cannot carry a group), so it is on by default.
 	KeepLinks bool `json:"keepLinks" bson:"keepLinks"`

@@ -157,6 +157,7 @@ button:disabled { cursor: not-allowed; }
 /* "backwards", not "both": a transform that keeps filling after the animation would make the card the containing block of
    position:fixed popovers inside it (the "⋯" menus) and misplace them. */
 .ap-row { animation: ap-row 0.4s var(--ease) backwards; }
+[data-settled] > .ap-row { animation: none; } /* a row that was dragged has already entered */
 .ap-shake { animation: ap-shake 0.4s var(--ease); }
 .ap-pulse { animation: ap-pulse 2s ease-in-out infinite; }
 

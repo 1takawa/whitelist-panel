@@ -334,6 +334,14 @@ func (s *Service) CreateInboundFor(ctx context.Context, in model.Inbound, toAllC
 	}
 	in.ID, in.CreatedAt = newID(), s.Now().UTC()
 	in.Up, in.Down = 0, 0
+	if in.SortOrder == 0 {
+		// A new connection goes to the end of the list, whatever order the rows were dragged into.
+		if all, err := s.Store.ListInbounds(ctx); err == nil {
+			for _, o := range all {
+				in.SortOrder = max(in.SortOrder, o.SortOrder+1)
+			}
+		}
+	}
 	if in.TrafficReset != model.ResetNever {
 		now := s.Now()
 		in.LastReset = &now

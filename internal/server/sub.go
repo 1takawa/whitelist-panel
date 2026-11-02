@@ -226,7 +226,7 @@ func autoOptions(a model.AutoNodeSettings) *formats.AutoOptions {
 	if !a.Enable {
 		return nil
 	}
-	return &formats.AutoOptions{Name: a.Name, Last: a.Last, URL: a.ProbeURL, IntervalSec: a.IntervalSec, TimeoutSec: a.TimeoutSec, ToleranceMs: a.ToleranceMs}
+	return &formats.AutoOptions{Name: a.Name, Last: a.Last, Position: a.Position, URL: a.ProbeURL, IntervalSec: a.IntervalSec, TimeoutSec: a.TimeoutSec, ToleranceMs: a.ToleranceMs}
 }
 
 func (s *Server) clash(sb *panel.Subscription) ([]byte, error) {

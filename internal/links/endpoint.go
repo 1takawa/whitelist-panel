@@ -39,6 +39,7 @@ type Endpoint struct {
 	Extra         map[string]any // xhttp options clients need
 	FinalMask     map[string]any // transport masks
 	NoAuto        bool           // the inbound asked to stay out of the automatic node
+	Order         int            // the inbound's SortOrder: where it stands in the list
 	AllowInsecure bool
 	ECH           string
 	PQV           string // reality: ML-DSA-65 verification key
@@ -76,6 +77,7 @@ func NewEndpoint(in model.Inbound, c model.Client, s model.Settings, name string
 
 	e.FinalMask = in.FinalMask()
 	e.NoAuto = in.ExcludeFromAuto
+	e.Order = in.SortOrder
 	switch in.Network {
 	case model.NetWS:
 		e.Path, e.HostHeader = orDefault(in.WS.Path, "/"), in.WS.Host
