@@ -3,6 +3,10 @@ package panel
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -471,4 +475,46 @@ func (s *Service) GenerateRegRuDomain(ctx context.Context, req RegRuGenerateRequ
 		s.Log.Warn("reg.ru: the new domain could not be remembered, its record will not be removed automatically", "domain", c.FQDN(label), "err", err)
 	}
 	return &RegRuGenerated{Domain: c.FQDN(label), IP: ip, Created: true}, nil
+}
+
+// RegRuCertificate is a key pair made on this server for the REG.RU API: the certificate goes into the account's API
+// settings, and REG.RU then wants it in every request; the key stays here.
+type RegRuCertificate struct {
+	Certificate string `json:"certificate"`
+	Key         string `json:"key"`
+}
+
+// GenerateRegRuCertificate makes a self-signed client certificate (RSA 2048, ten years) and its key without a password,
+// in the PEM form the settings take. Nothing is saved: the page fills the fields and the admin saves them.
+func (s *Service) GenerateRegRuCertificate() (*RegRuCertificate, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
+	if err != nil {
+		return nil, err
+	}
+	now := s.Now().UTC()
+	tpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "Whitelist Panel"},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.AddDate(10, 0, 0),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+	if err != nil {
+		return nil, err
+	}
+	kb, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return &RegRuCertificate{
+		Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
+		Key:         string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: kb})),
+	}, nil
 }

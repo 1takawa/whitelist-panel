@@ -5,7 +5,7 @@ import { Alert, Badge, Button, Card, CopyButton, Field, Hint, Input, PageHeader,
 import { ask } from '../components/confirm'
 import { useLoad } from '../hooks'
 import { formatDate } from '../lib'
-import type { ImportReport, RegRuStatus, Settings as SettingsT, TelegramStatus } from '../types'
+import type { ImportReport, RegRuCertificate, RegRuStatus, Settings as SettingsT, TelegramStatus, UpdateInfo } from '../types'
 
 const errText = (e: unknown) => (e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
 
@@ -15,6 +15,7 @@ const icons: Record<string, ReactNode> = {
   globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>,
   key: <><circle cx="8" cy="15" r="4" /><path d="m11 12 9-9M16 7l3 3" /></>,
   bot: <><rect x="4" y="8" width="16" height="11" rx="3" /><path d="M12 4v4M9 13v1M15 13v1" /></>,
+  refresh: <path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" />,
   db: <><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></>,
 }
 
@@ -244,6 +245,7 @@ function RegRu() {
   const [key, setKey] = useState('')
   const [note, setNote] = useState<Note>(null)
   const [busy, setBusy] = useState(false)
+  const [made, setMade] = useState(false) // a key pair was just made here and is waiting to be saved
   const st = status.data
 
   useEffect(() => {
@@ -264,8 +266,25 @@ function RegRu() {
       setPassword('')
       setCert('')
       setKey('')
+      setMade(false)
       await status.reload()
       setNote(next.connected ? { ok: true, text: okText } : { ok: false, text: `Сохранено, но reg.ru не принял подключение: ${next.error ?? 'неизвестная ошибка'}` })
+    } catch (e) {
+      setNote({ ok: false, text: errText(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function generate() {
+    if (st?.certSet && !(await ask('Заменить сохранённый сертификат новым? Новый my.crt придётся заново загрузить в настройках API reg.ru, а до этого панель не сможет работать с DNS.', { confirmLabel: 'Заменить' }))) return
+    setBusy(true)
+    setNote(null)
+    try {
+      const c = await api<RegRuCertificate>('/api/regru/certificate', { method: 'POST' })
+      setCert(c.certificate)
+      setKey(c.key)
+      setMade(true)
     } catch (e) {
       setNote({ ok: false, text: errText(e) })
     } finally {
@@ -361,7 +380,7 @@ function RegRu() {
       {st?.connected && (st.zoneProblems ?? []).length > 0 && (
         <div className="mt-4"><Alert tone="warn">Эти домены reg.ru не отдаёт панели: {st.zoneProblems.join('; ')}</Alert></div>
       )}
-      <details className="mt-4 rounded-lg border border-line px-4 py-3" open={st?.certSet || undefined}>
+      <details className="mt-4 rounded-lg border border-line px-4 py-3" open={st?.certSet || made || undefined}>
         <summary className="cursor-pointer text-sm font-medium">
           Сертификат для API {st?.certSet && <Badge tone="ok">загружен</Badge>}
         </summary>
@@ -369,6 +388,26 @@ function RegRu() {
           Нужен, только если в настройках API reg.ru загружен сертификат: тогда reg.ru требует его в каждом запросе. Вставьте сертификат и ключ в формате PEM
           (то, что начинается с <code>-----BEGIN</code>). Ключ без пароля. Хранятся только на сервере.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button disabled={busy} onClick={() => void generate()}>Сгенерировать сертификат на сервере</Button>
+          <span className="text-xs text-dim">Панель сама создаст пару на 10 лет: ключ останется здесь, а сертификат нужно загрузить в reg.ru.</span>
+        </div>
+        {made && cert && (
+          <div className="mt-3">
+            <Alert tone="ok">
+              <div className="grid gap-2">
+                <span>
+                  Сертификат создан. <b>1.</b> Скопируйте или скачайте его и загрузите в reg.ru: Личный кабинет → Настройки → API → сертификат.
+                  <b> 2.</b> Нажмите «Сохранить» ниже: пара запишется на сервере.
+                </span>
+                <span className="flex flex-wrap gap-2">
+                  <CopyButton text={cert} label="Копировать сертификат" />
+                  <Button onClick={() => downloadText('my.crt', cert)}>Скачать my.crt</Button>
+                </span>
+              </div>
+            </Alert>
+          </div>
+        )}
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <Field label="Сертификат (my.crt)"><Textarea value={cert} onChange={(e) => setCert(e.target.value)} placeholder="-----BEGIN CERTIFICATE-----" spellCheck={false} autoComplete="off" /></Field>
           <Field label="Приватный ключ (my.key)"><Textarea value={key} onChange={(e) => setKey(e.target.value)} placeholder="-----BEGIN PRIVATE KEY-----" spellCheck={false} autoComplete="off" /></Field>
@@ -391,6 +430,122 @@ function RegRu() {
         <Button variant="primary" onClick={() => void send({}, 'Подключено: reg.ru принял доступ.')} disabled={busy || certHalf || username.trim() === '' || zone.trim() === '' || (password === '' && !st?.passwordSet)}>
           {busy ? 'Проверяем…' : 'Сохранить'}
         </Button>
+      </div>
+    </Section>
+  )
+}
+
+// ---- updates of the panel itself ----
+
+function downloadText(name: string, text: string) {
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/x-pem-file' }))
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
+// Looks for a newer release of the panel and installs it: the panel downloads it, checks it and restarts itself; the page
+// waits for the new version to answer and then reloads.
+function Updates() {
+  const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<Note>(null)
+  const [target, setTarget] = useState('') // the version being installed
+  const [step, setStep] = useState('')
+
+  async function check(manual: boolean) {
+    setBusy(true)
+    if (manual) setNote(null)
+    try {
+      setInfo(await api<UpdateInfo>('/api/update' + (manual ? '?refresh=1' : '')))
+    } catch (e) {
+      if (manual) setNote({ ok: false, text: errText(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  useEffect(() => { void check(false) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function install() {
+    if (!info) return
+    if (!(await ask(`Установить версию ${info.latest}? Панель скачает релиз, проверит контрольную сумму и перезапустится (около 15–30 секунд). Клиенты на нодах продолжат работать.`, { confirmLabel: 'Обновить' }))) return
+    setNote(null)
+    setBusy(true)
+    try {
+      await api('/api/update/apply', { method: 'POST', body: { version: info.latest } })
+      setTarget(info.latest)
+      setStep('Скачиваю релиз…')
+    } catch (e) {
+      setNote({ ok: false, text: errText(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // While an update runs: ask how far it is; when the panel answers with the new version, reload the page.
+  useEffect(() => {
+    if (!target) return
+    const started = Date.now()
+    let stop = false
+    const tick = async () => {
+      if (stop) return
+      try {
+        const st = await api<{ state: string; message: string; log: string }>('/api/update/status')
+        if (st.state === 'failed') {
+          setTarget('')
+          setNote({ ok: false, text: `Обновление не удалось: ${st.message}${st.log ? `\n${st.log}` : ''}` })
+          return
+        }
+        if (st.message) setStep(st.message)
+        const now = await api<UpdateInfo>('/api/update')
+        if (now.current === target) {
+          window.location.reload()
+          return
+        }
+      } catch {
+        setStep('Панель перезапускается…') // it does not answer for a few seconds while it restarts
+      }
+      if (Date.now() - started > 4 * 60 * 1000) {
+        setTarget('')
+        setNote({ ok: false, text: 'Панель не ответила за 4 минуты. Проверьте её на сервере: journalctl -u anypanel -n 50. Если версия не поднялась, установщик сам вернёт прежнюю.' })
+        return
+      }
+      setTimeout(() => void tick(), 3000)
+    }
+    const t = setTimeout(() => void tick(), 3000)
+    return () => {
+      stop = true
+      clearTimeout(t)
+    }
+  }, [target])
+
+  return (
+    <Section
+      icon="refresh"
+      title="Обновление панели"
+      hint="Панель берёт новые версии из релизов на GitHub. Перед установкой проверяется контрольная сумма; если новая версия не запустится, установщик возвращает прежнюю."
+      aside={info ? <Badge>версия {info.current}</Badge> : undefined}
+    >
+      {target ? (
+        <Alert tone="warn">Обновляю до {target}: {step} Страница обновится сама.</Alert>
+      ) : info?.newer && info.canApply ? (
+        <div className="grid gap-3">
+          <Alert tone="warn">
+            Доступна версия <b>{info.latest}</b>{info.published ? ` от ${formatDate(info.published)}` : ''}. Сейчас установлена {info.current}.
+            {info.url && <> <a className="underline" href={info.url} target="_blank" rel="noreferrer">Что нового</a></>}
+          </Alert>
+          {info.notes && <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-3 text-xs text-dim">{info.notes}</pre>}
+        </div>
+      ) : info ? (
+        info.reason ? <Alert tone="warn">{info.reason}</Alert> : <p className="text-sm text-dim">Установлена последняя версия: {info.current}.</p>
+      ) : (
+        <p className="text-sm text-dim">{busy ? 'Проверяю…' : 'Нажмите «Проверить», чтобы узнать, вышла ли новая версия.'}</p>
+      )}
+      <Message note={note} />
+      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-line pt-4">
+        <Button onClick={() => void check(true)} disabled={busy || !!target}>{busy && !target ? 'Проверяю…' : 'Проверить наличие обновлений'}</Button>
+        {info?.newer && info.canApply && !target && <Button variant="primary" onClick={() => void install()} disabled={busy}>Обновить до {info.latest}</Button>}
       </div>
     </Section>
   )
@@ -506,6 +661,7 @@ export default function Settings() {
       <PageHeader title="Настройки" />
       <div className="grid gap-5">
         <Domains />
+        <Updates />
         <RegRu />
         <div className="grid items-start gap-5 lg:grid-cols-2">
           <Account />

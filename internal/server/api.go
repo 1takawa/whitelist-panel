@@ -82,6 +82,10 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/regru/domains", ss(s.regruDomains))
 	mux.HandleFunc("POST /api/regru/subdomain", ss(s.regruGenerate))
 	mux.HandleFunc("POST /api/regru/cleanup", ss(s.regruCleanup))
+	mux.HandleFunc("POST /api/regru/certificate", ss(s.regruCertificate))
+	mux.HandleFunc("GET /api/update", ss(s.updateCheck))
+	mux.HandleFunc("POST /api/update/apply", ss(s.updateApply))
+	mux.HandleFunc("GET /api/update/status", ss(s.updateStatus))
 
 	// Machines the panel controls: managing them is a session-only privilege like the tokens above.
 	mux.HandleFunc("GET /api/cascades", a(s.listCascades))

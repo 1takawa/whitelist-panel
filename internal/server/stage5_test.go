@@ -467,3 +467,35 @@ func TestCascadeAPIRules(t *testing.T) {
 		t.Fatalf("a bad name is an answer, not an error: %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestUpdateAndCertificateEndpointsAreSessionOnly(t *testing.T) {
+	e := newEnv(t, false)
+	tok := e.newToken(t)
+	routes := []struct{ method, path, body string }{
+		{http.MethodGet, "/api/update", ""},
+		{http.MethodPost, "/api/update/apply", `{"version":"9.9.9"}`},
+		{http.MethodGet, "/api/update/status", ""},
+		{http.MethodPost, "/api/regru/certificate", ""},
+	}
+	for _, r := range routes {
+		if rec := do(e.h, r.method, r.path, r.body, nil, nil); rec.Code != 401 {
+			t.Errorf("%s %s without a login: %d", r.method, r.path, rec.Code)
+		}
+		if rec := do(e.h, r.method, r.path, r.body, nil, bearer(tok)); rec.Code == 200 || rec.Code == 202 {
+			t.Errorf("%s %s with an API token: it replaces the program or hands out a key, so only a login may do it (%d)", r.method, r.path, rec.Code)
+		}
+	}
+
+	// With a login: the certificate comes back, and an update is refused politely where there is no updater.
+	rec := do(e.h, http.MethodPost, "/api/regru/certificate", "", e.cookie, nil)
+	var c struct{ Certificate, Key string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &c); err != nil || rec.Code != 200 || !strings.HasPrefix(c.Certificate, "-----BEGIN CERTIFICATE") || !strings.HasPrefix(c.Key, "-----BEGIN PRIVATE KEY") {
+		t.Fatalf("%d %v", rec.Code, err)
+	}
+	if rec := do(e.h, http.MethodGet, "/api/update", "", e.cookie, nil); rec.Code != 400 {
+		t.Fatalf("no updater here: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(e.h, http.MethodPost, "/api/update/apply", `{"version":"9.9.9"}`, e.cookie, nil); rec.Code != 400 {
+		t.Fatalf("no updater here: %d %s", rec.Code, rec.Body)
+	}
+}

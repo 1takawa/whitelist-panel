@@ -471,6 +471,22 @@ export type DomainCheck = {
   main: string[]
 }
 
+// A key pair the panel made on its own server for the REG.RU API.
+export type RegRuCertificate = { certificate: string; key: string }
+
+// What the settings page knows about updates of the panel itself.
+export type UpdateInfo = {
+  current: string
+  latest: string
+  newer: boolean
+  published?: string
+  notes?: string
+  url?: string
+  canApply: boolean
+  reason?: string
+  status: { state: 'idle' | 'downloading' | 'verifying' | 'installing' | 'failed'; message: string; version: string }
+}
+
 export type RegRuStatus = {
   configured: boolean
   connected: boolean

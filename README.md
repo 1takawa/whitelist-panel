@@ -2,7 +2,7 @@
 
 ### Панель управления Xray: VLESS и Trojan, подписки, ноды, автоузел
 
-![version](https://img.shields.io/badge/version-0.32.0-111214?style=flat-square)
+![version](https://img.shields.io/badge/version-0.33.0-111214?style=flat-square)
 ![platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20Debian-111214?style=flat-square)
 ![xray](https://img.shields.io/badge/Xray-26.10-111214?style=flat-square)
 ![go](https://img.shields.io/badge/Go-1.27-111214?style=flat-square)
@@ -74,7 +74,8 @@
 | 🧩 **Внешние ноды** | Чужие серверы по ссылке в подписку каждого клиента |
 | 🤖 **Telegram-бот** | Статистика, управление клиентами, копия базы |
 | 🔑 **API** | Доступ по токену из своих систем |
-| 📦 **Перенос и DNS** | Импорт из прежней панели, A-записи в REG.RU |
+| 📦 **Перенос и DNS** | Импорт из прежней панели, A-записи в REG.RU (сертификат для API создаётся кнопкой) |
+| ⬆️ **Обновление из панели** | Кнопка «Проверить наличие обновлений» и установка новой версии одним нажатием |
 
 </td>
 </tr>
@@ -200,6 +201,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/1takawa/whitelist-panel/main
 ```
 
 Тот же скрипт скачает новый релиз и обновит панель.
+
+**Из самой панели:** **Настройки → «Обновление панели» → «Проверить наличие обновлений»**. Если вышла новая версия, появится кнопка «Обновить»:
+панель скачает релиз с GitHub, проверит контрольную сумму и то, что бинарник запускается и показывает нужную версию, и запустит установщик. Панель
+перезапустится на 15–30 секунд, страница обновится сама. Работает на сервере с systemd; клиенты на нодах это время продолжают работать.
 
 Заменяется только программа панели. Настройки, база, домены и сертификаты не трогаются. Если после перезапуска панель не отвечает,
 установщик сам возвращает прежнюю версию (она лежит рядом как `/usr/local/bin/anypanel.prev`).
@@ -396,13 +401,13 @@ docs/                # установка вручную, заметки раз�
 ```bash
 cd frontend && npm ci && npm run build && cd ..
 go vet ./... && go test ./...
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=0.32.0" -o dist/anypanel ./cmd/anypanel
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=0.33.0" -o dist/anypanel ./cmd/anypanel
 cp deploy/install.sh internal/nodeinstall/install-node.sh dist/
 ```
 
 В каталоге `dist/` получится всё, что нужно установщику (`anypanel`, `install.sh`, `install-node.sh`). Подробнее для разработчиков: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-Релизы собирает GitHub Actions: тег вида `v0.32.0` запускает [workflow](.github/workflows/release.yml) и публикует архив `whitelist-panel-linux-amd64.tar.gz`.
+Релизы собирает GitHub Actions: тег вида `v0.33.0` запускает [workflow](.github/workflows/release.yml) и публикует архив `whitelist-panel-linux-amd64.tar.gz`.
 
 ---
 

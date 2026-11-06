@@ -38,6 +38,7 @@ import (
 	"anypanel2/internal/store/memstore"
 	"anypanel2/internal/store/mongostore"
 	"anypanel2/internal/sysinfo"
+	"anypanel2/internal/update"
 	"anypanel2/internal/webui"
 	"anypanel2/internal/xray"
 )
@@ -146,6 +147,7 @@ func cmdServe(log *slog.Logger, args []string) error {
 		}
 	}()
 	svc.Version = version
+	svc.Update = &update.Updater{Repo: os.Getenv("WHITELIST_REPO"), Dir: filepath.Join(cfg.StateDir, "update")}
 	svc.RegRuBase = os.Getenv("REGRU_API_URL") // empty = the real REG.RU API; set to a stand-in only for testing
 	sampler := sysinfo.NewSampler()
 	svc.Sampler = sampler

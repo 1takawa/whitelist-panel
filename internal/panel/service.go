@@ -22,6 +22,7 @@ import (
 	"anypanel2/internal/sub"
 	"anypanel2/internal/sysinfo"
 	"anypanel2/internal/telegram"
+	"anypanel2/internal/update"
 	"anypanel2/internal/xray"
 )
 
@@ -60,6 +61,7 @@ type Service struct {
 	GeoCountry func(ctx context.Context, host string) (string, error)
 	Installer  NodeInstaller   // SSH installation of nodes; nil means the real one (replaced in tests)
 	Routing    *routing.Source // RoscomVPN routing profiles; nil means the built-in copies only
+	Update     *update.Updater // looks for newer releases and installs them; nil = not available here
 	// SNI manages the extra REALITY domains of the main server (nginx map, decoy sites); nil = not available here.
 	SNI SNIFront
 	// LookupHost resolves a domain (nil = the system resolver; replaced in tests).

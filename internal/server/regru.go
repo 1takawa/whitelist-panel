@@ -22,6 +22,12 @@ func (s *Server) regruSave(w http.ResponseWriter, r *http.Request) {
 	s.respond(w, v, err)
 }
 
+// regruCertificate makes a key pair for the REG.RU API on this server (session only, nothing is stored yet).
+func (s *Server) regruCertificate(w http.ResponseWriter, _ *http.Request) {
+	v, err := s.svc.GenerateRegRuCertificate()
+	s.respond(w, v, err)
+}
+
 func (s *Server) regruDisconnect(w http.ResponseWriter, r *http.Request) {
 	if err := s.svc.DisconnectRegRu(r.Context()); err != nil {
 		s.fail(w, err)
