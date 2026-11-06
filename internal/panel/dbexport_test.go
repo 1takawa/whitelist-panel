@@ -49,7 +49,7 @@ func TestFullExportCarriesEverythingAndRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(name, "anypanel-full-") || !strings.HasSuffix(name, ".json") {
+	if !strings.HasPrefix(name, "whitelist-full-") || !strings.HasSuffix(name, ".json") {
 		t.Fatalf("file name: %s", name)
 	}
 	for _, want := range []string{"boss", "$argon2id$", "agent-secret-token", "PRIVATE-KEY", goodToken, "alice", "panel.example.com", "vless://x@h:1#n"} {
@@ -258,7 +258,7 @@ func TestDailyCopyGoesToTelegramOncePerMoscowDay(t *testing.T) {
 		t.Fatalf("the first tick sends the copy: %v %v", sent, err)
 	}
 	fake.mu.Lock()
-	if len(fake.files) != 1 || !strings.HasPrefix(fake.files[0], "anypanel-full-") || !strings.Contains(string(fake.contents[0]), `"kind":"full"`) {
+	if len(fake.files) != 1 || !strings.HasPrefix(fake.files[0], "whitelist-full-") || !strings.Contains(string(fake.contents[0]), `"kind":"full"`) {
 		t.Fatalf("a full export reaches the administrator: %v", fake.files)
 	}
 	fake.mu.Unlock()

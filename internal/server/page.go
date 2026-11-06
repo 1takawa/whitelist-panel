@@ -86,8 +86,9 @@ func sendPage(w http.ResponseWriter, body []byte, framed bool) {
 // customPage renders the administrator's page for a subscription; ok is false when there is none (or it does not render,
 // so the standard page is shown instead).
 func (s *Server) customPage(sb *panel.Subscription) ([]byte, bool) {
-	p := sb.Settings.Subscription.Page
-	if !p.Enable || p.HTML == "" {
+	page := sb.Settings.Subscription.Page
+	p := page.Theme(page.Selected)
+	if page.Selected == "" || p == nil || p.HTML == "" {
 		return nil, false
 	}
 	in := subpage.Input{

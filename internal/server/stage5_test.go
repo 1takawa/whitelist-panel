@@ -213,7 +213,7 @@ func TestDatabaseExportAndImportEndpoints(t *testing.T) {
 	tok := e.newToken(t)
 
 	full := do(e.h, http.MethodGet, "/api/db/export?kind=full", "", e.cookie, nil)
-	if full.Code != 200 || !strings.Contains(full.Header().Get("Content-Disposition"), "anypanel-full-") || !strings.Contains(full.Body.String(), `"kind":"full"`) {
+	if full.Code != 200 || !strings.Contains(full.Header().Get("Content-Disposition"), "whitelist-full-") || !strings.Contains(full.Body.String(), `"kind":"full"`) {
 		t.Fatalf("full export: %d %v", full.Code, full.Header())
 	}
 	if rec := do(e.h, http.MethodGet, "/api/db/export?kind=full", "", nil, bearer(tok)); rec.Code != 401 {

@@ -111,6 +111,7 @@ type fakeTG struct {
 	contents   [][]byte
 	reject     bool
 	rejectDocs bool
+	rejectMsgs bool // sendMessage is refused
 }
 
 func (f *fakeTG) start(t *testing.T) *httptest.Server {
@@ -131,6 +132,10 @@ func (f *fakeTG) start(t *testing.T) *httptest.Server {
 			f.mu.Lock()
 			reply([]any{})
 		case "sendMessage":
+			if f.rejectMsgs {
+				_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "description": "Forbidden", "error_code": 403})
+				return
+			}
 			_ = r.ParseForm()
 			f.messages = append(f.messages, r.Form.Get("chat_id")+"|"+r.Form.Get("text"))
 			reply(map[string]any{"message_id": 1})

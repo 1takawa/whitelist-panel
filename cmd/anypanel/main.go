@@ -158,6 +158,7 @@ func cmdServe(log *slog.Logger, args []string) error {
 	svc.Sampler = sampler
 	go sampler.Run(ctx, 5*time.Second)
 	go svc.RunBackups(ctx)
+	go svc.RunUpdateNotices(ctx)
 	svc.Routing = routing.NewGitHub()
 	svc.StartTelegram(ctx)
 	go svc.Run(ctx, 10*time.Second)

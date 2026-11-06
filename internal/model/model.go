@@ -278,20 +278,57 @@ type SubSettings struct {
 
 	AutoNode AutoNodeSettings `json:"autoNode" bson:"autoNode"`
 
-	// Page is the subscriber's page written by the administrator; off, the panel's own page is shown.
+	// Page holds the saved page themes and says which one the subscribers see; none selected, the panel's own page.
 	Page PageSettings `json:"page" bson:"page"`
 
 	// Preview is how the subscription link looks when it is pasted into a messenger.
 	Preview LinkPreview `json:"preview" bson:"preview"`
 }
 
-// PageSettings hold a page of the administrator's own design: an HTML document (a Go html/template) with its styles and
-// script, that is shown to a browser instead of the standard page. The apps get the subscription itself as before.
+// PageSettings hold the pages of the administrator's own design, as saved themes. The theme that is selected is shown to
+// a browser instead of the standard page; the apps get the subscription itself as before.
 type PageSettings struct {
-	Enable bool   `json:"enable" bson:"enable"`
-	HTML   string `json:"html" bson:"html"`
-	CSS    string `json:"css" bson:"css"` // put into the page as <style>
-	JS     string `json:"js" bson:"js"`   // put into the page as <script>; the subscription is in window.sub
+	Selected string      `json:"selected" bson:"selected"` // id of a theme; "" = the standard page
+	Themes   []PageTheme `json:"themes" bson:"themes"`
+
+	// A page saved by releases 0.39 and 0.40, when there was only one: moved into a theme when the settings are loaded.
+	OldEnable bool   `json:"-" bson:"enable,omitempty"`
+	OldHTML   string `json:"-" bson:"html,omitempty"`
+	OldCSS    string `json:"-" bson:"css,omitempty"`
+	OldJS     string `json:"-" bson:"js,omitempty"`
+}
+
+// PageTheme is one saved page: an HTML document (a Go html/template), its styles and its script.
+type PageTheme struct {
+	ID   string `json:"id" bson:"id"`
+	Name string `json:"name" bson:"name"`
+	HTML string `json:"html" bson:"html"`
+	CSS  string `json:"css" bson:"css"` // put into the page as <style>
+	JS   string `json:"js" bson:"js"`   // put into the page as <script>; the subscription is in window.sub
+}
+
+// Theme is the saved theme with the id, nil when there is none.
+func (p PageSettings) Theme(id string) *PageTheme {
+	for i := range p.Themes {
+		if p.Themes[i].ID == id {
+			return &p.Themes[i]
+		}
+	}
+	return nil
+}
+
+// migrate turns the single page of releases 0.39 and 0.40 into a theme (selected if the page was on).
+func (p *PageSettings) migrate() {
+	if p.OldHTML != "" && len(p.Themes) == 0 {
+		p.Themes = []PageTheme{{ID: "mypage", Name: "Моя страница", HTML: p.OldHTML, CSS: p.OldCSS, JS: p.OldJS}}
+		if p.OldEnable {
+			p.Selected = "mypage"
+		}
+	}
+	p.OldEnable, p.OldHTML, p.OldCSS, p.OldJS = false, "", "", ""
+	if p.Themes == nil {
+		p.Themes = []PageTheme{}
+	}
 }
 
 // Link preview modes.
@@ -374,6 +411,7 @@ func (s Settings) WithDefaults() Settings {
 		sub.Happ.LocalProxyAuth = "auto"
 	}
 	sub.AutoNode.applyDefaults()
+	sub.Page.migrate()
 	sub.Version = SubSettingsVersion
 	if sub.Preview.Mode == "" {
 		sub.Preview.Mode = PreviewDefault

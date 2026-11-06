@@ -172,9 +172,15 @@ export type SubSettings = {
   page: PageSettings
 }
 
-// The subscriber's page written by the administrator.
+// The saved page themes; the selected one is what subscribers see in a browser ("" = the standard page).
 export type PageSettings = {
-  enable: boolean
+  selected: string
+  themes: PageTheme[]
+}
+
+export type PageTheme = {
+  id: string
+  name: string
   html: string
   css: string // put into the page as <style>
   js: string // put into the page as <script>; the subscription is in window.sub

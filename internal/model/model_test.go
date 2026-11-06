@@ -36,3 +36,26 @@ func TestOldDefaultSubscriptionTitleIsReplaced(t *testing.T) {
 		t.Fatalf("a title somebody chose stays: %q", got)
 	}
 }
+
+func TestSinglePageOfEarlierReleasesBecomesATheme(t *testing.T) {
+	on := PageSettings{OldEnable: true, OldHTML: "<p>x</p>", OldCSS: "p{}", OldJS: "1"}
+	on.migrate()
+	if len(on.Themes) != 1 || on.Selected != on.Themes[0].ID || on.Themes[0].HTML != "<p>x</p>" || on.Themes[0].CSS != "p{}" || on.Themes[0].JS != "1" || on.OldHTML != "" {
+		t.Fatalf("%+v", on)
+	}
+	off := PageSettings{OldHTML: "<p>x</p>"}
+	off.migrate()
+	if len(off.Themes) != 1 || off.Selected != "" {
+		t.Fatalf("a page that was off stays off: %+v", off)
+	}
+	none := PageSettings{}
+	none.migrate()
+	if none.Themes == nil || len(none.Themes) != 0 || none.Theme("x") != nil {
+		t.Fatalf("%+v", none)
+	}
+	kept := PageSettings{Selected: "a", Themes: []PageTheme{{ID: "a", Name: "A", HTML: "<b/>"}}, OldHTML: "<p>old</p>"}
+	kept.migrate()
+	if len(kept.Themes) != 1 || kept.Themes[0].HTML != "<b/>" {
+		t.Fatalf("saved themes win over the old page: %+v", kept)
+	}
+}

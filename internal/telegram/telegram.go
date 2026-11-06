@@ -325,13 +325,24 @@ func (b *Bot) handle(ctx context.Context, m Message) {
 
 // Notify sends text to every administrator and reports the first error.
 func (b *Bot) Notify(ctx context.Context, text string) error {
+	_, err := b.NotifyCount(ctx, text)
+	return err
+}
+
+// NotifyCount is Notify that also says how many administrators received the text.
+func (b *Bot) NotifyCount(ctx context.Context, text string) (int, error) {
 	var first error
+	sent := 0
 	for _, id := range b.Admins() {
-		if err := b.Client.SendMessage(ctx, id, text); err != nil && first == nil {
-			first = err
+		if err := b.Client.SendMessage(ctx, id, text); err != nil {
+			if first == nil {
+				first = err
+			}
+			continue
 		}
+		sent++
 	}
-	return first
+	return sent, first
 }
 
 // maxUpload is what the Bot API accepts for one file.

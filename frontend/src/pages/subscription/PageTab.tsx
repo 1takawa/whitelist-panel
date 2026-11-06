@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../../api'
-import { Alert, Button, Card, Segmented, Textarea, Toggle } from '../../components/ui'
-import type { PageSettings } from '../../types'
+import { ask } from '../../components/confirm'
+import { Alert, Button, Card, Field, Input, Modal, Segmented, Select, Textarea } from '../../components/ui'
+import type { PageSettings, PageTheme } from '../../types'
 
 // What a page can use. `{{.name}}` puts the value in, escaped for the place it stands in (text, an attribute, a script).
 const fields: Array<[string, string]> = [
@@ -32,8 +34,111 @@ const holders: Record<File, string> = {
   js: '// Скрипт добавится в конец страницы. Значения подписки лежат в объекте sub:\n// sub.name, sub.url, sub.usedText, sub.links …',
 }
 
-// The subscriber's page written by the administrator: an HTML document with {{…}} places for the subscription's values.
+const DEFAULT = ''
+const newId = () => `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+// The subscriber's page: the standard one, or one of the saved themes written by the administrator. A theme is an HTML
+// document with {{…}} places for the subscription's values, its styles and its script.
 export default function PageTab({ value: p, onChange }: { value: PageSettings; onChange: (patch: Partial<PageSettings>) => void }) {
+  const [dialog, setDialog] = useState<'create' | 'rename' | null>(null)
+  const theme = p.themes.find((t) => t.id === p.selected)
+
+  const setTheme = (patch: Partial<PageTheme>) => onChange({ themes: p.themes.map((t) => (t.id === p.selected ? { ...t, ...patch } : t)) })
+
+  async function create(name: string) {
+    // A new theme starts as a copy of the example page, so there is something working to change.
+    const ex = await api<{ html: string; css: string; js: string }>('/api/settings/page-example')
+    const t: PageTheme = { id: newId(), name, html: ex.html, css: ex.css, js: ex.js }
+    onChange({ themes: [...p.themes, t], selected: t.id })
+  }
+
+  async function remove() {
+    if (!theme || !(await ask(`Удалить тему «${theme.name}»? Это видно после кнопки «Сохранить».`, { confirmLabel: 'Удалить' }))) return
+    onChange({ themes: p.themes.filter((t) => t.id !== theme.id), selected: DEFAULT })
+  }
+
+  return (
+    <div className="grid gap-5">
+      <Card className="grid gap-4 p-5">
+        <div>
+          <h2 className="text-sm font-semibold">Страница подписки</h2>
+          <p className="mt-1 text-sm text-dim">Что клиент видит в браузере по своей ссылке. Приложения (Happ, INCY и другие) получают саму подписку, как и раньше.</p>
+        </div>
+        <Field label="Тема">
+          <Select value={p.selected} onChange={(e) => onChange({ selected: e.target.value })}>
+            <option value={DEFAULT}>Whitelist Panel (по умолчанию)</option>
+            {p.themes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </Select>
+        </Field>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setDialog('create')} disabled={p.themes.length >= 20}>Создать</Button>
+          {theme && <Button onClick={() => setDialog('rename')}>Переименовать</Button>}
+          {theme && <Button variant="danger" onClick={() => void remove()}>Удалить</Button>}
+        </div>
+      </Card>
+
+      {theme && <Editor key={theme.id} theme={theme} onChange={setTheme} />}
+
+      {dialog && createPortal(
+        // Outside the subscription form: a form inside a form is not valid HTML and its submit would reach the outer one.
+        <NameDialog
+          title={dialog === 'create' ? 'Новая тема' : 'Название темы'}
+          initial={dialog === 'create' ? '' : theme?.name ?? ''}
+          taken={p.themes.filter((t) => dialog === 'create' || t.id !== theme?.id).map((t) => t.name.toLowerCase())}
+          onClose={() => setDialog(null)}
+          onSave={async (name) => {
+            if (dialog === 'create') await create(name)
+            else setTheme({ name })
+            setDialog(null)
+          }}
+        />,
+        document.body,
+      )}
+    </div>
+  )
+}
+
+// The window that asks for a theme's name.
+function NameDialog({ title, initial, taken, onSave, onClose }: { title: string; initial: string; taken: string[]; onSave: (name: string) => Promise<void>; onClose: () => void }) {
+  const [name, setName] = useState(initial)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const clean = name.trim()
+  const duplicate = taken.includes(clean.toLowerCase())
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    e.stopPropagation() // the settings form around the tab must not take this submit for its own
+    if (clean === '' || duplicate) return
+    setBusy(true)
+    setError('')
+    try {
+      await onSave(clean)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      <form onSubmit={submit} className="grid gap-4">
+        <Field label="Название">
+          <Input autoFocus required maxLength={60} value={name} onChange={(e) => setName(e.target.value)} placeholder="Hidden Pool" />
+        </Field>
+        {duplicate && <Alert tone="warn">Тема с таким названием уже есть.</Alert>}
+        {error && <Alert>{error}</Alert>}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Отмена</Button>
+          <Button type="submit" variant="primary" disabled={busy || clean === '' || duplicate}>{busy ? 'Сохраняем…' : 'Сохранить'}</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// The code of the selected theme and how it looks. Changes are kept with the page's «Сохранить» button.
+function Editor({ theme, onChange }: { theme: PageTheme; onChange: (patch: Partial<PageTheme>) => void }) {
   const [file, setFile] = useState<File>('html')
   const [view, setView] = useState<{ id: string } | { error: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -42,24 +147,24 @@ export default function PageTab({ value: p, onChange }: { value: PageSettings; o
 
   // The preview follows the code with a pause after typing; the server checks the page and renders it with made-up data.
   useEffect(() => {
-    if (p.html.trim() === '') {
+    if (theme.html.trim() === '') {
       setView(null)
       return
     }
     const mine = ++seq.current
     const t = setTimeout(async () => {
       try {
-        const r = await api<{ id: string }>('/api/settings/page-preview', { method: 'POST', body: { html: p.html, css: p.css, js: p.js } })
+        const r = await api<{ id: string }>('/api/settings/page-preview', { method: 'POST', body: { html: theme.html, css: theme.css, js: theme.js } })
         if (mine === seq.current) setView({ id: r.id })
       } catch (e) {
         if (mine === seq.current) setView({ error: e instanceof Error ? e.message : String(e) })
       }
     }, 600)
     return () => clearTimeout(t)
-  }, [p.html, p.css, p.js])
+  }, [theme.html, theme.css, theme.js])
 
   async function insertExample() {
-    if ((p.html + p.css + p.js).trim() !== '' && !window.confirm('Заменить текущий код (HTML, CSS и JavaScript) примером?')) return
+    if ((theme.html + theme.css + theme.js).trim() !== '' && !(await ask('Заменить код этой темы (HTML, CSS и JavaScript) примером?', { confirmLabel: 'Заменить' }))) return
     setBusy(true)
     setNote('')
     try {
@@ -73,17 +178,7 @@ export default function PageTab({ value: p, onChange }: { value: PageSettings; o
   }
 
   return (
-    <div className="grid gap-5">
-      <Card className="grid gap-4 p-5">
-        <h2 className="text-sm font-semibold">Своя страница подписки</h2>
-        <p className="text-sm text-dim">
-          Страница, которую клиент видит в браузере по своей ссылке. Можно написать её целиком: вставьте HTML, стили (CSS) и скрипт (JavaScript), а значения подписки подставляются в HTML в места вида <code className="font-mono">{'{{.name}}'}</code>. В скрипте те же значения лежат в объекте <code className="font-mono">sub</code>.
-          Приложения (Happ, INCY и другие) получают саму подписку, как и раньше.
-        </p>
-        <Toggle label="Показывать мою страницу вместо стандартной" checked={p.enable} onChange={(v) => onChange({ enable: v })} />
-        {p.enable && p.html.trim() === '' && <Alert tone="warn">HTML пуст: вставьте свой или нажмите «Вставить пример».</Alert>}
-      </Card>
-
+    <>
       <Card className="grid gap-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Segmented
@@ -91,14 +186,15 @@ export default function PageTab({ value: p, onChange }: { value: PageSettings; o
             value={file}
             onChange={setFile}
             small
-            items={files.map((f) => ({ id: f.id, label: f.label, title: p[f.id].trim() === '' ? 'пусто' : `${p[f.id].length} символов` }))}
+            items={files.map((f) => ({ id: f.id, label: f.label, title: theme[f.id].trim() === '' ? 'пусто' : `${theme[f.id].length} символов` }))}
           />
           <div className="flex gap-2">
             <Button onClick={() => void insertExample()} disabled={busy}>Вставить пример</Button>
-            <Button onClick={() => onChange({ [file]: '' } as Partial<PageSettings>)} disabled={p[file] === ''}>Очистить {files.find((f) => f.id === file)?.label}</Button>
+            <Button onClick={() => onChange({ [file]: '' } as Partial<PageTheme>)} disabled={theme[file] === ''}>Очистить {files.find((f) => f.id === file)?.label}</Button>
           </div>
         </div>
-        <Textarea key={file} rows={22} value={p[file]} spellCheck={false} placeholder={holders[file]} onChange={(e) => onChange({ [file]: e.target.value } as Partial<PageSettings>)} className="font-mono text-xs" />
+        <Textarea key={file} rows={22} value={theme[file]} spellCheck={false} placeholder={holders[file]} onChange={(e) => onChange({ [file]: e.target.value } as Partial<PageTheme>)} className="font-mono text-xs" />
+        {theme.html.trim() === '' && <Alert tone="warn">HTML пуст: такую тему нельзя выбрать для клиентов.</Alert>}
         {note && <Alert>{note}</Alert>}
         <p className="text-xs text-dim">
           Страница открывается в песочнице: скрипты и стили работают, шрифты и картинки можно подключать с любых адресов, но доступа к панели у неё нет.
@@ -132,11 +228,11 @@ export default function PageTab({ value: p, onChange }: { value: PageSettings; o
             ))}
             <p className="text-xs text-dim">
               Условия и циклы: <code className="font-mono">{'{{if .hasUrl}}…{{end}}'}</code>, <code className="font-mono">{'{{range .links}}…{{end}}'}</code>; внутри цикла к общим значениям обращаются через <code className="font-mono">{'$.url'}</code>.
-              Страница — шаблон Go html/template.
+              Страница — шаблон Go html/template. В скрипте те же значения лежат в объекте <code className="font-mono">sub</code>.
             </p>
           </div>
         </details>
       </Card>
-    </div>
+    </>
   )
 }

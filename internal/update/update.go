@@ -85,6 +85,11 @@ func (u *Updater) repo() string {
 	return DefaultRepo
 }
 
+// ChangelogURL is the page with the history of changes.
+func (u *Updater) ChangelogURL() string {
+	return "https://github.com/" + u.repo() + "/blob/main/CHANGELOG.md"
+}
+
 func (u *Updater) now() time.Time {
 	if u.Now != nil {
 		return u.Now()

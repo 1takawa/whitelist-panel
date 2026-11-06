@@ -797,18 +797,58 @@ func normalizeAutoNode(a *model.AutoNodeSettings) error {
 	return normalizeAutoGroups(a)
 }
 
-// normalizePage checks the administrator's page: it has to be a template that renders, or a subscriber would see an error
-// instead of their subscription. Turned on, it cannot be empty.
+const maxPageThemes = 20
+
+var themeIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,40}$`)
+
+// normalizePage checks the saved page themes: each needs a name, and one that has code has to be a template that
+// renders, or a subscriber would see an error instead of their subscription. The selected theme cannot be empty.
 func normalizePage(p *model.PageSettings) error {
-	if strings.TrimSpace(p.HTML) == "" {
-		p.HTML = ""
-		if p.Enable {
-			return invalid("the subscription page code is empty")
-		}
-		return nil
+	p.OldEnable, p.OldHTML, p.OldCSS, p.OldJS = false, "", "", ""
+	if len(p.Themes) > maxPageThemes {
+		return invalid("too many page themes (max %d)", maxPageThemes)
 	}
-	if err := subpage.Validate(subpage.Page{HTML: p.HTML, CSS: p.CSS, JS: p.JS}); err != nil {
-		return invalid("the subscription page does not work: %v", err)
+	if p.Themes == nil {
+		p.Themes = []model.PageTheme{}
+	}
+	ids, names := map[string]bool{}, map[string]bool{}
+	for i := range p.Themes {
+		t := &p.Themes[i]
+		t.Name = strings.TrimSpace(t.Name)
+		if t.Name == "" {
+			return invalid("a page theme needs a name")
+		}
+		if len([]rune(t.Name)) > 60 || strings.ContainsAny(t.Name, "\r\n") {
+			return invalid("page theme name must be a single line of at most 60 characters")
+		}
+		if names[strings.ToLower(t.Name)] {
+			return invalid("there are two page themes named %q", t.Name)
+		}
+		names[strings.ToLower(t.Name)] = true
+		t.ID = strings.TrimSpace(t.ID)
+		if t.ID == "" {
+			t.ID = newID()
+		}
+		if !themeIDRe.MatchString(t.ID) || ids[t.ID] {
+			return invalid("page theme id %q is not valid or is used twice", t.ID)
+		}
+		ids[t.ID] = true
+		if strings.TrimSpace(t.HTML) == "" {
+			t.HTML = ""
+			continue
+		}
+		if err := subpage.Validate(subpage.Page{HTML: t.HTML, CSS: t.CSS, JS: t.JS}); err != nil {
+			return invalid("the page %q does not work: %v", t.Name, err)
+		}
+	}
+	if p.Selected != "" {
+		t := p.Theme(p.Selected)
+		if t == nil {
+			return invalid("the selected page theme does not exist")
+		}
+		if t.HTML == "" {
+			return invalid("the selected page %q has no HTML", t.Name)
+		}
 	}
 	return nil
 }

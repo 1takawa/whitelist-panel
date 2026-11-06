@@ -22,10 +22,12 @@ import (
 //
 // Both are one JSON document. ImportDB reads either, and also the users file of the previous panel (mongoexport).
 const (
-	ExportFormat  = "anypanel2-db"
-	ExportVersion = 1
-	ExportFull    = "full"
-	ExportUsers   = "users"
+	ExportFormat = "whitelist-db"
+	// legacyExportFormat is what files made before the rename say; they are still read.
+	legacyExportFormat = "anypanel2-db"
+	ExportVersion      = 1
+	ExportFull         = "full"
+	ExportUsers        = "users"
 
 	maxImportClients = 50000
 )
@@ -120,7 +122,7 @@ func (s *Service) ExportDB(ctx context.Context, kind string) (string, []byte, er
 	if err != nil {
 		return "", nil, err
 	}
-	name := fmt.Sprintf("anypanel-%s-%s.json", kind, now.In(moscow).Format("2006-01-02_15-04"))
+	name := fmt.Sprintf("whitelist-%s-%s.json", kind, now.In(moscow).Format("2006-01-02_15-04"))
 	return name, data, nil
 }
 
@@ -174,7 +176,7 @@ func (s *Service) ImportDB(ctx context.Context, data []byte, opts ImportOptions)
 		}
 		return s.importLegacyReport(ctx, users, opts)
 	}
-	if head.Format != ExportFormat {
+	if head.Format != ExportFormat && head.Format != legacyExportFormat {
 		return nil, invalid("unknown file format %q", head.Format)
 	}
 	var exp Export

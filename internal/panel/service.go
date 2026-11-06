@@ -91,6 +91,7 @@ type Service struct {
 	secretsMu      sync.Mutex // read-modify-write of the secrets document
 	extMu          sync.Mutex // external node list edits (duplicate checks)
 	lastBackupFail time.Time
+	lastUpdateFail time.Time // the last failed check for a new release or delivery of the notice
 
 	tgMu     sync.Mutex
 	tgCtx    context.Context

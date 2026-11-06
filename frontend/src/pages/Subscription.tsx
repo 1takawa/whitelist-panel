@@ -25,7 +25,7 @@ const TABS = [
 ]
 
 // A saved document from before the page existed has no page block.
-const NO_PAGE: PageSettings = { enable: false, html: '', css: '', js: '' }
+const NO_PAGE: PageSettings = { selected: '', themes: [] }
 
 const SAMPLE_ID = 'k3j9x0q2m7p5v8ab'
 

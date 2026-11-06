@@ -38,6 +38,10 @@ type Secrets struct {
 	RegRuKey      string `bson:"regruKey"`
 	// BackupSentAt is when the daily database copy last reached the administrators in Telegram.
 	BackupSentAt *time.Time `bson:"backupSentAt"`
+	// UpdateCheckedAt is when the panel last asked GitHub for a newer release (every 12 hours), UpdateNotified the newest
+	// version the administrators were already told about in Telegram.
+	UpdateCheckedAt *time.Time `bson:"updateCheckedAt"`
+	UpdateNotified  string     `bson:"updateNotified"`
 }
 
 // TelegramSettings configure the administrators' bot. The bot token itself lives in Secrets. A running bot always

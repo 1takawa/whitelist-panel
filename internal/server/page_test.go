@@ -13,20 +13,41 @@ func TestOwnSubscriptionPage(t *testing.T) {
 	c := loggedIn(t, h)
 	browser := map[string]string{"Accept": "text/html"}
 
-	put := func(page string) int {
-		body, _ := json.Marshal(map[string]any{"panelDomain": "panel.example.com", "subscription": map[string]any{"page": map[string]any{"enable": true, "html": page, "css": "h1{color:#123456}", "js": "document.title = sub.name;"}}})
-		return do(h, http.MethodPut, "/api/settings", string(body), c, nil).Code
+	putPage := func(page map[string]any) (int, string) {
+		body, _ := json.Marshal(map[string]any{"panelDomain": "panel.example.com", "subscription": map[string]any{"page": page}})
+		rec := do(h, http.MethodPut, "/api/settings", string(body), c, nil)
+		return rec.Code, rec.Body.String()
 	}
+	theme := func(name, html string) map[string]any {
+		return map[string]any{"id": "t1", "name": name, "html": html, "css": "h1{color:#123456}", "js": "document.title = sub.name;"}
+	}
+	good := `<!doctype html><title>{{.title}}</title><h1>{{.name}}</h1><b>{{.statusLabel}}</b><a href="{{.url}}">link</a><script>const sub = {{.json}};</script>`
 
-	// Pages that cannot work are refused when saved, not when a subscriber opens them.
-	for name, page := range map[string]string{"empty": "  ", "broken": "<p>{{.name</p>", "unknown call": "<p>{{nosuchfunc .name}}</p>"} {
-		if code := put(page); code != 400 {
-			t.Errorf("%s page must be refused: %d", name, code)
+	// Themes that cannot work are refused when saved, not when a subscriber opens them.
+	for name, page := range map[string]map[string]any{
+		"broken":         {"selected": "t1", "themes": []any{theme("A", "<p>{{.name</p>")}},
+		"unknown call":   {"selected": "t1", "themes": []any{theme("A", "<p>{{nosuchfunc .name}}</p>")}},
+		"empty selected": {"selected": "t1", "themes": []any{theme("A", "  ")}},
+		"no such theme":  {"selected": "zzz", "themes": []any{theme("A", good)}},
+		"no name":        {"themes": []any{theme(" ", good)}},
+		"same names":     {"themes": []any{theme("A", good), map[string]any{"id": "t2", "name": "a", "html": good}}},
+		"bad id":         {"themes": []any{map[string]any{"id": "../x", "name": "A", "html": good}}},
+	} {
+		if code, _ := putPage(page); code != 400 {
+			t.Errorf("%s must be refused: %d", name, code)
 		}
 	}
 
-	if code := put(`<!doctype html><title>{{.title}}</title><h1>{{.name}}</h1><b>{{.statusLabel}}</b><a href="{{.url}}">link</a><script>const sub = {{.json}};</script>`); code != 200 {
-		t.Fatalf("a good page is saved: %d", code)
+	// A theme that is saved but not selected changes nothing for subscribers.
+	if code, body := putPage(map[string]any{"themes": []any{theme("Hidden Pool", good)}}); code != 200 {
+		t.Fatalf("%d %s", code, body)
+	}
+	if page := do(h, http.MethodGet, "/sub/"+subID, "", nil, browser); strings.Contains(page.Body.String(), "<h1>alice</h1>") || strings.Contains(page.Header().Get("Content-Security-Policy"), "sandbox") {
+		t.Fatalf("the standard page stays until a theme is chosen:\n%s", page.Body)
+	}
+
+	if code, body := putPage(map[string]any{"selected": "t1", "themes": []any{theme("Hidden Pool", good)}}); code != 200 {
+		t.Fatalf("%d %s", code, body)
 	}
 	rec := do(h, http.MethodGet, "/sub/"+subID, "", nil, browser)
 	got := rec.Body.String()
@@ -43,13 +64,12 @@ func TestOwnSubscriptionPage(t *testing.T) {
 		t.Fatal("only browsers get the page")
 	}
 
-	// Turned off, the standard page comes back.
-	body, _ := json.Marshal(map[string]any{"panelDomain": "panel.example.com", "subscription": map[string]any{"page": map[string]any{"enable": false, "html": "<p>x</p>"}}})
-	if code := do(h, http.MethodPut, "/api/settings", string(body), c, nil).Code; code != 200 {
-		t.Fatal(code)
+	// A theme without an id gets one; going back to the standard page keeps the theme saved.
+	if code, body := putPage(map[string]any{"themes": []any{map[string]any{"name": "New", "html": good}}}); code != 200 || !strings.Contains(body, `"name":"New"`) || strings.Contains(body, `"id":""`) {
+		t.Fatalf("%d %s", code, body)
 	}
-	if page := do(h, http.MethodGet, "/sub/"+subID, "", nil, browser); strings.Contains(page.Body.String(), "<h1>alice</h1>") || strings.Contains(page.Header().Get("Content-Security-Policy"), "sandbox") {
-		t.Fatalf("the page is off:\n%s", page.Body)
+	if page := do(h, http.MethodGet, "/sub/"+subID, "", nil, browser); strings.Contains(page.Body.String(), "<h1>alice</h1>") {
+		t.Fatalf("the standard page is back:\n%s", page.Body)
 	}
 }
 
