@@ -432,6 +432,19 @@ func (s *Service) importFull(ctx context.Context, exp Export, opts ImportOptions
 	if err != nil {
 		return nil, err
 	}
+	// The panel and REALITY domains say where this machine is reached, and the clients, nodes and cascades of the file
+	// were made elsewhere: after a move to another server the file still names the old one, whose address the domain
+	// checks would then take for this server's. So this server's own domains stay (a fresh panel without any takes the file's).
+	var kept []string
+	if d := old.Settings.PanelDomain; d != "" {
+		if snap.Settings.PanelDomain != "" && snap.Settings.PanelDomain != d {
+			kept = append(kept, "домен панели в файле "+snap.Settings.PanelDomain+" заменён на домен этого сервера "+d)
+		}
+		snap.Settings.PanelDomain = d
+	}
+	if d := old.Settings.RealityDomain; d != "" {
+		snap.Settings.RealityDomain = d
+	}
 	if err := s.Store.ReplaceAll(ctx, snap); err != nil {
 		if rerr := s.Store.ReplaceAll(ctx, old); rerr != nil {
 			if s.Log != nil {
@@ -452,6 +465,14 @@ func (s *Service) importFull(ctx context.Context, exp Export, opts ImportOptions
 	if s.Xray != nil {
 		if err := s.applyLocked(ctx, true); err != nil {
 			rep.Warning = wrapApply(err).Error()
+		}
+	}
+	if len(kept) > 0 {
+		note := "Домены панели не менялись: " + strings.Join(kept, "; ") + "."
+		if rep.Warning != "" {
+			rep.Warning += " " + note
+		} else {
+			rep.Warning = note
 		}
 	}
 	return rep, nil

@@ -17,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"anypanel2/internal/model"
@@ -162,6 +163,22 @@ func (s *Service) publicIP(ctx context.Context) (string, error) {
 	if s.PublicIP != nil {
 		return s.PublicIP(ctx)
 	}
+	return LookupPublicIP(ctx)
+}
+
+var (
+	publicIPMu sync.Mutex
+	publicIPAt time.Time
+	publicIPIs string
+)
+
+// LookupPublicIP asks the internet for this machine's address and remembers the answer for ten minutes.
+func LookupPublicIP(ctx context.Context) (string, error) {
+	publicIPMu.Lock()
+	defer publicIPMu.Unlock()
+	if publicIPIs != "" && time.Since(publicIPAt) < 10*time.Minute {
+		return publicIPIs, nil
+	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, "https://api.ipify.org", nil)
@@ -178,6 +195,7 @@ func (s *Service) publicIP(ctx context.Context) (string, error) {
 	if _, perr := netip.ParseAddr(ip); err != nil || perr != nil {
 		return "", errors.New("address not found")
 	}
+	publicIPIs, publicIPAt = ip, time.Now()
 	return ip, nil
 }
 

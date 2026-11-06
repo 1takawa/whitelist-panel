@@ -147,6 +147,7 @@ func cmdServe(log *slog.Logger, args []string) error {
 		}
 	}()
 	svc.Version = version
+	svc.PublicIP = panel.LookupPublicIP // the domain checks compare with this machine's real address
 	svc.Update = &update.Updater{Repo: os.Getenv("WHITELIST_REPO"), Dir: filepath.Join(cfg.StateDir, "update")}
 	svc.RegRuBase = os.Getenv("REGRU_API_URL") // empty = the real REG.RU API; set to a stand-in only for testing
 	sampler := sysinfo.NewSampler()

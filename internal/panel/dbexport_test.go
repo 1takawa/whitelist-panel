@@ -398,3 +398,34 @@ func mustClient(t *testing.T, svc *Service, name string) model.Client {
 	t.Fatalf("client %q not found", name)
 	return model.Client{}
 }
+
+// After a move to another server the file still names the old server's domains: this server keeps its own.
+func TestFullImportKeepsTheDomainsOfThisServer(t *testing.T) {
+	ctx := context.Background()
+	src, _ := seeded(t) // panel.example.com
+	_, data, err := src.ExportDB(ctx, ExportFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dst, _, dstStore := newService(t)
+	set, _ := dst.GetSettings(ctx)
+	set.PanelDomain, set.RealityDomain = "new-panel.example.net", "new-reality.example.net"
+	if _, err := dst.PutSettings(ctx, *set); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := dst.ImportDB(ctx, data, ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := dstStore.Snapshot(ctx)
+	if after.Settings.PanelDomain != "new-panel.example.net" || after.Settings.RealityDomain != "new-reality.example.net" {
+		t.Fatalf("this server's domains stay: %+v", after.Settings)
+	}
+	if len(after.Clients) != 2 {
+		t.Fatalf("the rest of the file is imported: %d clients", len(after.Clients))
+	}
+	if !strings.Contains(rep.Warning, "panel.example.com") || !strings.Contains(rep.Warning, "new-panel.example.net") {
+		t.Fatalf("the admin is told what was kept: %q", rep.Warning)
+	}
+}

@@ -812,3 +812,26 @@ func TestInterruptedCascadeCreationIsRepairedAtStart(t *testing.T) {
 		t.Fatalf("%v %d", err, sni.calls)
 	}
 }
+
+// The panel's domains may still name another server (after a move or an import): the machine's own address wins.
+func TestMainServerAddressComesFromTheMachineWhenKnown(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _, _, dns := cascadeEnvFull(t)
+	dns["here.example.com"] = []string{"203.0.113.55"}  // really points at this machine
+	dns["stale.example.com"] = []string{"203.0.113.10"} // the panel domain's old address
+	svc.PublicIP = func(context.Context) (string, error) { return "203.0.113.55", nil }
+
+	if got, _ := svc.CheckCascadeDomain(ctx, "here.example.com", "", ""); !got.OK || len(got.Main) != 1 || got.Main[0] != "203.0.113.55" {
+		t.Fatalf("a domain at this machine's address passes: %+v", got)
+	}
+	got, _ := svc.CheckCascadeDomain(ctx, "stale.example.com", "", "")
+	if got.OK || !strings.Contains(got.Problem, "203.0.113.55") {
+		t.Fatalf("a domain at the old address is refused and the machine's address is named: %+v", got)
+	}
+
+	// When the address cannot be found out the panel's domains are used as before.
+	svc.PublicIP = func(context.Context) (string, error) { return "", errors.New("offline") }
+	if got, _ := svc.CheckCascadeDomain(ctx, "stale.example.com", "", ""); !got.OK {
+		t.Fatalf("falls back to the panel's domains: %+v", got)
+	}
+}

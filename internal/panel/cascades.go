@@ -656,12 +656,21 @@ func (s *Service) CheckCascadeDomainWith(ctx context.Context, domain, exceptCasc
 	entryName := "основного сервера"
 	var want []string
 	if entryServerID == "" {
-		for _, host := range []string{set.PanelDomain, set.RealityDomain} {
-			if host == "" {
-				continue
+		// This machine's own address, as the internet sees it, is the truth. The panel's domains only stand in for it
+		// when it cannot be found out: after a move or an import they may still name another server.
+		if s.PublicIP != nil {
+			if ip, err := s.PublicIP(ctx); err == nil && ip != "" {
+				want = []string{ip}
 			}
-			if a, err := s.lookup(ctx, host); err == nil {
-				want = append(want, a...)
+		}
+		if len(want) == 0 {
+			for _, host := range []string{set.PanelDomain, set.RealityDomain} {
+				if host == "" {
+					continue
+				}
+				if a, err := s.lookup(ctx, host); err == nil {
+					want = append(want, a...)
+				}
 			}
 		}
 	} else {
