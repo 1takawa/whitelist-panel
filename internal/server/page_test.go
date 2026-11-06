@@ -155,6 +155,12 @@ func TestBuiltInPageIsSelectedWithItsFields(t *testing.T) {
 	if img := do(h, http.MethodGet, "/api/theme-assets/hidden-pool/banner.jpg", "", nil, nil); img.Code != 200 || img.Header().Get("Content-Type") != "image/jpeg" || img.Body.Len() < 1000 {
 		t.Fatalf("%d %s", img.Code, img.Header().Get("Content-Type"))
 	}
+	// A kept copy is asked about each time and answered with 304 while it is current.
+	first := do(h, http.MethodGet, "/api/theme-assets/hidden-pool/banner.jpg", "", nil, nil)
+	if etag := first.Header().Get("ETag"); etag == "" || first.Header().Get("Cache-Control") != "public, no-cache" ||
+		do(h, http.MethodGet, "/api/theme-assets/hidden-pool/banner.jpg", "", nil, map[string]string{"If-None-Match": etag}).Code != 304 {
+		t.Fatal("pictures are revalidated, not kept for a day")
+	}
 	if img := do(h, http.MethodGet, "/api/theme-assets/hidden-pool/page.html", "", nil, nil); img.Code != 404 {
 		t.Fatalf("%d", img.Code)
 	}

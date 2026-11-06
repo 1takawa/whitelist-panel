@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
 	"strings"
@@ -137,9 +138,18 @@ func (s *Server) themeAsset(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// The browser may keep the picture but asks again each time whether it changed (a 304 costs nothing), so a replaced
+	// picture shows up at once instead of after the day the old one was kept.
+	sum := sha256.Sum256(b)
+	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
 	h := w.Header()
 	h.Set("Content-Type", ct)
-	h.Set("Cache-Control", "public, max-age=86400")
+	h.Set("Cache-Control", "public, no-cache")
+	h.Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	_, _ = w.Write(b)
 }
 
