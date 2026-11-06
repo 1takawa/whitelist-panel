@@ -807,7 +807,7 @@ func normalizePage(p *model.PageSettings) error {
 		}
 		return nil
 	}
-	if err := subpage.Validate(p.HTML); err != nil {
+	if err := subpage.Validate(subpage.Page{HTML: p.HTML, CSS: p.CSS, JS: p.JS}); err != nil {
 		return invalid("the subscription page does not work: %v", err)
 	}
 	return nil

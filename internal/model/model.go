@@ -285,11 +285,13 @@ type SubSettings struct {
 	Preview LinkPreview `json:"preview" bson:"preview"`
 }
 
-// PageSettings hold a page of the administrator's own design: an HTML document (a Go html/template) that is shown to a
-// browser instead of the standard page. The apps get the subscription itself as before.
+// PageSettings hold a page of the administrator's own design: an HTML document (a Go html/template) with its styles and
+// script, that is shown to a browser instead of the standard page. The apps get the subscription itself as before.
 type PageSettings struct {
 	Enable bool   `json:"enable" bson:"enable"`
 	HTML   string `json:"html" bson:"html"`
+	CSS    string `json:"css" bson:"css"` // put into the page as <style>
+	JS     string `json:"js" bson:"js"`   // put into the page as <script>; the subscription is in window.sub
 }
 
 // Link preview modes.

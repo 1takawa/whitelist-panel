@@ -176,6 +176,8 @@ export type SubSettings = {
 export type PageSettings = {
   enable: boolean
   html: string
+  css: string // put into the page as <style>
+  js: string // put into the page as <script>; the subscription is in window.sub
 }
 
 export type AutoNodeSettings = {

@@ -5,7 +5,7 @@ import TemplateField from '../components/TemplateField'
 import { Alert, Button, Card, Field, Input, PageHeader, Select, Toggle } from '../components/ui'
 import AppPreview, { type AppId } from '../components/AppPreview'
 import { useLoad, useMediaQuery } from '../hooks'
-import type { LinkPreview, ProfileMode, Settings, SubSettings, TemplateToken } from '../types'
+import type { LinkPreview, PageSettings, ProfileMode, Settings, SubSettings, TemplateToken } from '../types'
 import FormatsTab from './subscription/FormatsTab'
 import HappTab from './subscription/HappTab'
 import IncyTab from './subscription/IncyTab'
@@ -23,6 +23,9 @@ const TABS = [
   { id: 'happ', label: 'Happ' },
   { id: 'incy', label: 'Incy' },
 ]
+
+// A saved document from before the page existed has no page block.
+const NO_PAGE: PageSettings = { enable: false, html: '', css: '', js: '' }
 
 const SAMPLE_ID = 'k3j9x0q2m7p5v8ab'
 
@@ -279,7 +282,7 @@ export default function Subscription() {
 
           {tab === 'formats' && <FormatsTab value={sub.formats} onChange={(p) => set({ formats: { ...sub.formats, ...p } })} example={(path) => addressFor(form, path, false)} />}
           {tab === 'auto' && <AutoNodeTab value={sub.autoNode} onChange={(p) => set({ autoNode: { ...sub.autoNode, ...p } })} jsonEnabled={sub.formats.jsonEnable} clashEnabled={sub.formats.clashEnable} />}
-          {tab === 'page' && <PageTab value={sub.page ?? { enable: false, html: '' }} onChange={(p) => set({ page: { ...(sub.page ?? { enable: false, html: '' }), ...p } })} />}
+          {tab === 'page' && <PageTab value={{ ...NO_PAGE, ...sub.page }} onChange={(p) => set({ page: { ...NO_PAGE, ...sub.page, ...p } })} />}
           {tab === 'happ' && <HappTab value={sub.happ} onChange={(p) => set({ happ: { ...sub.happ, ...p } })} />}
           {tab === 'incy' && <IncyTab value={sub.incy} onChange={(p) => set({ incy: { ...sub.incy, ...p } })} />}
         </Tabs>

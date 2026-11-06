@@ -98,7 +98,7 @@ func (s *Server) customPage(sb *panel.Subscription) ([]byte, bool) {
 	for _, l := range sb.Links {
 		in.Links = append(in.Links, subpage.Link{Remark: l.Remark, Name: l.Name, Protocol: l.Protocol, Network: l.Network, Security: l.Security, Link: l.Link})
 	}
-	out, err := subpage.Render(p.HTML, subpage.Data(in))
+	out, err := subpage.Render(subpage.Page{HTML: p.HTML, CSS: p.CSS, JS: p.JS}, subpage.Data(in))
 	if err != nil {
 		s.log.Error("custom subscription page failed", "err", err)
 		return nil, false
@@ -108,18 +108,21 @@ func (s *Server) customPage(sb *panel.Subscription) ([]byte, bool) {
 
 // pageExample gives the starting page for the editor.
 func (s *Server) pageExample(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"html": subpage.Example()})
+	e := subpage.Example()
+	writeJSON(w, http.StatusOK, map[string]string{"html": e.HTML, "css": e.CSS, "js": e.JS})
 }
 
 // pagePreviewCreate checks the code the editor sends, renders it with made-up data and remembers the result.
 func (s *Server) pagePreviewCreate(w http.ResponseWriter, r *http.Request) {
 	req, ok := decode[struct {
 		HTML string `json:"html"`
+		CSS  string `json:"css"`
+		JS   string `json:"js"`
 	}](w, r)
 	if !ok {
 		return
 	}
-	out, err := subpage.Render(req.HTML, subpage.Sample())
+	out, err := subpage.Render(subpage.Page{HTML: req.HTML, CSS: req.CSS, JS: req.JS}, subpage.Sample())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

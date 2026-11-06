@@ -14,7 +14,7 @@ func TestOwnSubscriptionPage(t *testing.T) {
 	browser := map[string]string{"Accept": "text/html"}
 
 	put := func(page string) int {
-		body, _ := json.Marshal(map[string]any{"panelDomain": "panel.example.com", "subscription": map[string]any{"page": map[string]any{"enable": true, "html": page}}})
+		body, _ := json.Marshal(map[string]any{"panelDomain": "panel.example.com", "subscription": map[string]any{"page": map[string]any{"enable": true, "html": page, "css": "h1{color:#123456}", "js": "document.title = sub.name;"}}})
 		return do(h, http.MethodPut, "/api/settings", string(body), c, nil).Code
 	}
 
@@ -30,7 +30,8 @@ func TestOwnSubscriptionPage(t *testing.T) {
 	}
 	rec := do(h, http.MethodGet, "/sub/"+subID, "", nil, browser)
 	got := rec.Body.String()
-	if rec.Code != 200 || !strings.Contains(got, "<h1>alice</h1>") || !strings.Contains(got, "Активна") || !strings.Contains(got, "const sub = {") {
+	if rec.Code != 200 || !strings.Contains(got, "<h1>alice</h1>") || !strings.Contains(got, "Активна") || !strings.Contains(got, "const sub = {") ||
+		!strings.Contains(got, "h1{color:#123456}") || !strings.Contains(got, "document.title = sub.name;") || !strings.Contains(got, "window.sub = {") {
 		t.Fatalf("the page is filled with the subscription: %d\n%s", rec.Code, got)
 	}
 	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") || strings.Contains(csp, "allow-same-origin") || rec.Header().Get("X-Frame-Options") == "SAMEORIGIN" {
@@ -60,14 +61,14 @@ func TestSubscriptionPageEditorEndpoints(t *testing.T) {
 		t.Fatalf("the editor is for the administrator: %d", rec.Code)
 	}
 	ex := do(h, http.MethodGet, "/api/settings/page-example", "", c, nil)
-	var example struct{ HTML string }
+	var example struct{ HTML, CSS, JS string }
 	_ = json.Unmarshal(ex.Body.Bytes(), &example)
-	if ex.Code != 200 || !strings.Contains(example.HTML, "{{.name}}") {
+	if ex.Code != 200 || !strings.Contains(example.HTML, "{{.name}}") || example.CSS == "" || example.JS == "" {
 		t.Fatalf("the example: %d", ex.Code)
 	}
 
 	post := func(html string) (int, string) {
-		b, _ := json.Marshal(map[string]string{"html": html})
+		b, _ := json.Marshal(map[string]string{"html": html, "css": example.CSS, "js": example.JS})
 		rec := do(h, http.MethodPost, "/api/settings/page-preview", string(b), c, nil)
 		var out struct{ ID string }
 		_ = json.Unmarshal(rec.Body.Bytes(), &out)
@@ -82,6 +83,7 @@ func TestSubscriptionPageEditorEndpoints(t *testing.T) {
 	}
 	view := do(h, http.MethodGet, "/api/settings/page-preview/"+id, "", nil, nil) // the sandboxed frame carries no cookie
 	if view.Code != 200 || !strings.Contains(view.Body.String(), "demo@example.com") ||
+		!strings.Contains(view.Body.String(), "<style>") || !strings.Contains(view.Body.String(), "window.sub = ") ||
 		!strings.Contains(view.Header().Get("Content-Security-Policy"), "sandbox") || view.Header().Get("X-Frame-Options") != "SAMEORIGIN" {
 		t.Fatalf("the preview is shown in a sandboxed frame: %d %v", view.Code, view.Header())
 	}

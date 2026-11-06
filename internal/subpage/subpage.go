@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,10 +21,22 @@ import (
 const MaxSize = 256 << 10
 
 //go:embed example.html
-var example string
+var exampleHTML string
+
+//go:embed example.css
+var exampleCSS string
+
+//go:embed example.js
+var exampleJS string
+
+// Page is a page of the administrator's own design: the HTML (a template), its styles and its script. The styles and the
+// script are put into the page as they are; the script finds the subscription in window.sub.
+type Page struct {
+	HTML, CSS, JS string
+}
 
 // Example is a complete page to start from: the same fields the standard page shows.
-func Example() string { return example }
+func Example() Page { return Page{HTML: exampleHTML, CSS: exampleCSS, JS: exampleJS} }
 
 // Link is one connection of the subscriber.
 type Link struct {
@@ -169,19 +182,36 @@ func qrSVG(text string) string {
 	return b.String()
 }
 
-func parse(src string) (*template.Template, error) {
-	if len(src) > MaxSize {
-		return nil, fmt.Errorf("the page is too long (max %d KB)", MaxSize>>10)
+func parse(p Page) (*template.Template, error) {
+	for name, part := range map[string]string{"HTML": p.HTML, "CSS": p.CSS, "JavaScript": p.JS} {
+		if len(part) > MaxSize {
+			return nil, fmt.Errorf("%s is too long (max %d KB)", name, MaxSize>>10)
+		}
 	}
-	if strings.TrimSpace(src) == "" {
+	if strings.TrimSpace(p.HTML) == "" {
 		return nil, errors.New("the page is empty")
 	}
-	return template.New("page").Option("missingkey=zero").Parse(src)
+	return template.New("page").Option("missingkey=zero").Parse(p.HTML)
 }
 
-// Render fills the page with the data.
-func Render(src string, data map[string]any) ([]byte, error) {
-	t, err := parse(src)
+// inject puts text before the first closing tag of the given name (any case), or at the end when the page has none.
+func inject(page []byte, tag, text string) []byte {
+	i := bytes.Index(bytes.ToLower(page), []byte(tag))
+	if i < 0 {
+		return append(page, text...)
+	}
+	return append(page[:i:i], append([]byte(text), page[i:]...)...)
+}
+
+// closeSafe keeps a closing tag typed inside the text from ending the element early.
+func closeSafe(text, tag string) string {
+	re := regexp.MustCompile(`(?i)</` + tag)
+	return re.ReplaceAllString(text, `<\/`+tag)
+}
+
+// Render fills the HTML with the data and adds the styles (before </head>) and the script (before </body>).
+func Render(p Page, data map[string]any) ([]byte, error) {
+	t, err := parse(p)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +219,15 @@ func Render(src string, data map[string]any) ([]byte, error) {
 	if err := t.Execute(&buf, data); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	out := buf.Bytes()
+	if strings.TrimSpace(p.CSS) != "" {
+		out = inject(out, "</head>", "<style>\n"+closeSafe(p.CSS, "style")+"\n</style>\n")
+	}
+	if strings.TrimSpace(p.JS) != "" {
+		pub, _ := data["json"].(template.JS)
+		out = inject(out, "</body>", "<script>\nwindow.sub = "+string(pub)+";\n"+closeSafe(p.JS, "script")+"\n</script>\n")
+	}
+	return out, nil
 }
 
 // Sample is a made-up subscription for the preview and for checking a page before it is saved.
@@ -207,7 +245,7 @@ func Sample() map[string]any {
 }
 
 // Validate checks that the page is a template that renders. A page that fails here would show nothing to a subscriber.
-func Validate(src string) error {
-	_, err := Render(src, Sample())
+func Validate(p Page) error {
+	_, err := Render(p, Sample())
 	return err
 }

@@ -10,6 +10,9 @@ func TestExampleRenders(t *testing.T) {
 	if err := Validate(Example()); err != nil {
 		t.Fatal(err)
 	}
+	if e := Example(); e.CSS == "" || e.JS == "" || strings.Contains(e.HTML, "<style") || strings.Contains(e.HTML, "<script") {
+		t.Fatal("the example keeps its styles and script apart from the HTML")
+	}
 	out, err := Render(Example(), Sample())
 	if err != nil {
 		t.Fatal(err)
@@ -22,10 +25,37 @@ func TestExampleRenders(t *testing.T) {
 	}
 }
 
+func TestStylesAndScriptAreAddedToThePage(t *testing.T) {
+	d := Data(Input{Name: "alice", Status: "active"})
+	out, err := Render(Page{HTML: "<!doctype html><HEAD><title>t</title></HEAD><body><p>{{.name}}</p></body>", CSS: "p{color:red}</style><b>", JS: "console.log(sub.name);</script><b>"}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	head, body := strings.Index(s, "</HEAD>"), strings.Index(s, "</body>")
+	style, script := strings.Index(s, "<style>"), strings.Index(s, "<script>")
+	if style < 0 || style > head || script < head || script > body {
+		t.Fatalf("styles go into the head, the script at the end of the body:\n%s", s)
+	}
+	if strings.Count(s, "</style>") != 1 || strings.Count(s, "</script>") != 1 || !strings.Contains(s, "window.sub = {") || !strings.Contains(s, `"name":"alice"`) {
+		t.Fatalf("typed closing tags must not end the elements, the script gets the subscription:\n%s", s)
+	}
+
+	// A page without head or body still gets both.
+	bare, err := Render(Page{HTML: "<p>x</p>", CSS: "p{}", JS: "1"}, d)
+	if err != nil || !strings.HasSuffix(strings.TrimSpace(string(bare)), "</script>") || !strings.Contains(string(bare), "<style>") {
+		t.Fatalf("%v\n%s", err, bare)
+	}
+	// Nothing is added when there is nothing to add.
+	if plain, _ := Render(Page{HTML: "<p>x</p>"}, d); strings.Contains(string(plain), "<style") || strings.Contains(string(plain), "<script") {
+		t.Fatalf("%s", plain)
+	}
+}
+
 func TestValuesAreEscapedForTheirPlace(t *testing.T) {
 	in := Input{Name: `<img src=x onerror=alert(1)>`, Title: "t", Status: "active", Announce: `"><script>alert(2)</script>`,
 		URL: "https://s.example/sub/x?a=1&b=2", Links: []Link{{Remark: "</script><script>alert(3)</script>"}}}
-	out, err := Render(`<p>{{.name}}</p><a title="{{.announce}}" href="{{.url}}">x</a><script>var s = {{.json}};</script>`, Data(in))
+	out, err := Render(Page{HTML: `<p>{{.name}}</p><a title="{{.announce}}" href="{{.url}}">x</a><script>var s = {{.json}};</script>`}, Data(in))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,10 +76,13 @@ func TestDataFields(t *testing.T) {
 	if free["totalText"] != "∞" || free["expiryText"] != "Бессрочно" || free["daysLeft"] != -1 || free["unlimited"] != true || free["hasUrl"] != false {
 		t.Fatalf("%v", free)
 	}
-	if _, err := Render(strings.Repeat("x", MaxSize+1), free); err == nil {
+	if _, err := Render(Page{HTML: strings.Repeat("x", MaxSize+1)}, free); err == nil {
 		t.Fatal("a page over the limit must be refused")
 	}
-	if err := Validate("{{range}}"); err == nil {
+	if _, err := Render(Page{HTML: "<p>x</p>", JS: strings.Repeat("x", MaxSize+1)}, free); err == nil {
+		t.Fatal("a script over the limit must be refused")
+	}
+	if err := Validate(Page{HTML: "{{range}}"}); err == nil {
 		t.Fatal("a broken template must be refused")
 	}
 }
