@@ -828,3 +828,72 @@ func TestNodeScriptBuildsTheThreeXUIProScheme(t *testing.T) {
 		t.Fatalf("order: site at %d, agent at %d", site, agent)
 	}
 }
+
+func TestAMissingARecordIsMarkedSoTheWizardCanWaveItThrough(t *testing.T) {
+	withDomain := func(domainIP string) string {
+		return goodProbe + "domain=node.example.com\ndomain_ip=" + domainIP + "\nserver_ip=10.0.0.5\npublic_ip=203.0.113.20\n"
+	}
+	for name, ip := range map[string]string{"no record": "", "record elsewhere": "198.51.100.7"} {
+		r := parseProbe(withDomain(ip), "hk", 8765, 443)
+		if r.OK || r.DNSProblem == "" || len(r.Problems) != 1 || r.Problems[0] != r.DNSProblem {
+			t.Fatalf("%s: the DNS problem is one of the problems and named on its own: %+v", name, r)
+		}
+	}
+	if r := parseProbe(withDomain("203.0.113.20"), "hk", 8765, 443); !r.OK || r.DNSProblem != "" {
+		t.Fatalf("%+v", r)
+	}
+	// Another problem next to it stays a problem that the DNS switch of the wizard does not cover.
+	r := parseProbe(strings.Replace(withDomain(""), "uid=0", "uid=1000", 1), "hk", 8765, 443)
+	if r.OK || len(r.Problems) < 2 || r.DNSProblem == "" {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestInstallTellsTheNodeToWaitForTheRecordOnlyWhenAsked(t *testing.T) {
+	run := func(mod func(*Options)) string {
+		f := startFakeSSH(t, okInstallHandler)
+		bin, _ := tempBinary(t)
+		o := options(f, bin)
+		o.RealityDomain = "node.example.com"
+		mod(&o)
+		if _, err := Install(context.Background(), o, func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for _, s := range f.scripts {
+			if strings.Contains(s, "install-node.sh --port") {
+				return s
+			}
+		}
+		t.Fatal("the installer was not started")
+		return ""
+	}
+	if s := run(func(o *Options) {}); strings.Contains(s, "ANYPANEL_SKIP_DNS_CHECK") {
+		t.Fatalf("by default the node checks the record itself: %q", s)
+	}
+	if s := run(func(o *Options) { o.SkipDNSCheck = true }); !strings.Contains(s, "export ANYPANEL_SKIP_DNS_CHECK='1'\n") {
+		t.Fatalf("the node is told to wait: %q", s)
+	}
+	if s := run(func(o *Options) { o.SkipDNSCheck, o.RealityDomain = true, "" }); strings.Contains(s, "ANYPANEL_SKIP_DNS_CHECK") {
+		t.Fatalf("without a domain there is no record to wait for: %q", s)
+	}
+}
+
+func TestNodeScriptWaitsForTheRecordWhenTheCheckIsSkipped(t *testing.T) {
+	for _, want := range []string{
+		`SKIP_DNS_CHECK="${ANYPANEL_SKIP_DNS_CHECK:-}"`,
+		"wait_reality_dns()",
+		`if [[ -n "$SKIP_DNS_CHECK" ]]; then`,
+		"seq 1 72", // twelve minutes in steps of ten seconds
+		"tries=4",  // and the certificate is asked for again while DNS settles
+	} {
+		if !strings.Contains(string(installScript), want) {
+			t.Errorf("%q is missing from the node script", want)
+		}
+	}
+	// Without the switch the script still refuses a domain that does not point here.
+	if !strings.Contains(string(installScript), "нет A-записи: создайте запись типа A на адрес этого сервера и повторите") {
+		t.Error("the normal check must stay")
+	}
+}

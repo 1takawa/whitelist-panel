@@ -744,3 +744,22 @@ func TestServiceWithoutLocalXrayCanChangeConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNodeInstallPassesTheSkippedDNSCheckOnAndGivesTheRecordTimeToAppear(t *testing.T) {
+	ctx := context.Background()
+	svc, fi, _ := installEnv(t)
+	req := goodRequest()
+	req.SkipDNSCheck = true
+	j, err := svc.StartNodeInstall(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := waitJob(t, svc, j.ID); done.Status != "done" {
+		t.Fatalf("%+v", done)
+	}
+	fi.mu.Lock()
+	defer fi.mu.Unlock()
+	if len(fi.opts) != 1 || !fi.opts[0].SkipDNSCheck {
+		t.Fatalf("the installer is told to wait for the record: %+v", fi.opts)
+	}
+}

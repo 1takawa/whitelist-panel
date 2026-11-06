@@ -28,6 +28,8 @@ HOSTS=""
 ASSUME_YES=0
 ANYPANEL_OPEN_PORTS="${ANYPANEL_OPEN_PORTS:-}"
 REALITY_DOMAIN="${ANYPANEL_REALITY_DOMAIN:-}"
+# Не проверять A-запись домена заранее (админ создал её сам и знает, что она скоро появится): вместо отказа скрипт ждёт её.
+SKIP_DNS_CHECK="${ANYPANEL_SKIP_DNS_CHECK:-}"
 
 if [[ -t 1 ]]; then C_G=$'\e[32m'; C_Y=$'\e[33m'; C_R=$'\e[31m'; C_B=$'\e[1m'; C_0=$'\e[0m'; else C_G=""; C_Y=""; C_R=""; C_B=""; C_0=""; fi
 log()  { printf '%s==>%s %s\n' "$C_G" "$C_0" "$*"; }
@@ -224,12 +226,32 @@ FAKE_SITES_URL="https://github.com/mozaroc/3x-ui-pro/archive/refs/heads/main.tar
 valid_domain() { [[ "$1" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]]; }
 
 # Домен должен указывать на этот сервер, иначе Let's Encrypt откажет в сертификате.
+# С ANYPANEL_SKIP_DNS_CHECK запись ждут до 12 минут: сертификат всё равно нельзя выпустить, пока домен не указывает сюда.
+wait_reality_dns() {
+  local d="$1" ip_local="$2" ip_pub="$3" a="" i
+  log "Проверка A-записи пропущена по просьбе администратора: жду, пока $d начнёт указывать на этот сервер (до 12 минут)"
+  for i in $(seq 1 72); do
+    a="$(getent ahostsv4 "$d" 2>/dev/null | awk 'NR==1{print $1}')"
+    if [[ -n "$a" && ( "$a" == "$ip_local" || "$a" == "$ip_pub" ) ]]; then
+      log "Домен $d указывает на этот сервер ($a)"
+      return 0
+    fi
+    if (( i % 6 == 0 )); then log "Жду A-запись $d… (прошло $((i / 6)) мин)"; fi
+    sleep 10
+  done
+  die "за 12 минут домен $d так и не стал указывать на этот сервер (сейчас: ${a:-записи нет}). Проверьте A-запись и повторите установку"
+}
+
 check_reality_dns() {
   local d="$1" a ip_local ip_pub
-  a="$(getent ahostsv4 "$d" 2>/dev/null | awk 'NR==1{print $1}')"
-  [[ -n "$a" ]] || die "у домена $d нет A-записи: создайте запись типа A на адрес этого сервера и повторите"
   ip_local="$(ip route get 8.8.8.8 2>/dev/null | grep -Po -- 'src \K\S*' || true)"
   ip_pub="$(curl -fsS -m 8 https://ipv4.icanhazip.com 2>/dev/null | tr -d '[:space:]' || true)"
+  if [[ -n "$SKIP_DNS_CHECK" ]]; then
+    wait_reality_dns "$d" "$ip_local" "$ip_pub"
+    return 0
+  fi
+  a="$(getent ahostsv4 "$d" 2>/dev/null | awk 'NR==1{print $1}')"
+  [[ -n "$a" ]] || die "у домена $d нет A-записи: создайте запись типа A на адрес этого сервера и повторите"
   if [[ "$a" != "$ip_local" && "$a" != "$ip_pub" ]]; then
     die "домен $d указывает на $a, а адрес этого сервера: ${ip_pub:-$ip_local}. Исправьте A-запись и повторите (после смены DNS может пройти несколько минут)"
   fi
@@ -337,8 +359,19 @@ setup_reality() {
   done
   if [[ ! -d "/etc/letsencrypt/live/$d" ]]; then
     log "Let's Encrypt: выпускаю сертификат для $d"
-    certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$d" >/dev/null \
-      || die "сертификат для $d не выпущен: проверьте A-запись и что порт 80 доступен из интернета"
+    # Сразу после появления записи у Let's Encrypt она может быть ещё не видна: при пропущенной проверке пробуем несколько раз.
+    local tries=1 n
+    [[ -n "$SKIP_DNS_CHECK" ]] && tries=4
+    for n in $(seq 1 "$tries"); do
+      if certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$d" >/dev/null; then
+        break
+      fi
+      if (( n == tries )); then
+        die "сертификат для $d не выпущен: проверьте A-запись и что порт 80 доступен из интернета"
+      fi
+      log "Сертификат пока не выдан (DNS ещё обновляется), повторяю через 40 секунд ($n из $((tries - 1)))"
+      sleep 40
+    done
   fi
   # Продление через nginx (порт 80 принадлежит ему), а не standalone, иначе certbot.timer не сможет обновить сертификат.
   sed -i 's/^authenticator = .*/authenticator = nginx/' "/etc/letsencrypt/renewal/$d.conf" 2>/dev/null || true

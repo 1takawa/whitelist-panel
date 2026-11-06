@@ -66,6 +66,7 @@ type Form = {
   privateKey: string
   useKey: boolean
   realityDomain: string
+  skipDns: boolean
   name: string
   country: string
   agentPort: string
@@ -75,7 +76,7 @@ type Form = {
 }
 
 const empty: Form = {
-  host: '', sshPort: '22', user: 'root', password: '', privateKey: '', useKey: false, realityDomain: '',
+  host: '', sshPort: '22', user: 'root', password: '', privateKey: '', useKey: false, realityDomain: '', skipDns: false,
   name: '', country: '', agentPort: '8765', createInbound: true, addClients: true, forcePort: false,
 }
 
@@ -114,9 +115,12 @@ export function NodeInstaller({ onClose, onDone }: { onClose: () => void; onDone
   }
 
   const busy = report?.busyPorts ?? []
+  // Only the domain's A record stands in the way, and the admin said it is on its way: the installation waits for it.
+  const waitsForDns = !!report && !report.ok && f.skipDns && !!report.dnsProblem && report.problems.every((p) => p === report.dnsProblem)
+  const passed = !!report && (report.ok || waitsForDns)
 
   async function install() {
-    if (!report?.ok) return
+    if (!report || !passed) return
     setStarting(true)
     setError('')
     try {
@@ -133,6 +137,7 @@ export function NodeInstaller({ onClose, onDone }: { onClose: () => void; onDone
           createInbound: f.createInbound,
           addClients: f.createInbound && f.addClients,
           forcePort: f.createInbound && busy.length > 0 && f.forcePort,
+          skipDnsCheck: f.createInbound && f.skipDns,
         },
       })
       setFinished(null)
@@ -146,7 +151,7 @@ export function NodeInstaller({ onClose, onDone }: { onClose: () => void; onDone
 
   const installing = jobId !== ''
   const missing = [f.name.trim() === '' && 'имя в подписке'].filter(Boolean)
-  const ready = report?.ok && missing.length === 0
+  const ready = passed && missing.length === 0
 
   return (
     <Modal title="Автоматическая установка ноды" onClose={() => { if (finished?.status === 'done') onDone(); onClose() }} wide persistent>
@@ -159,7 +164,7 @@ export function NodeInstaller({ onClose, onDone }: { onClose: () => void; onDone
           </div>
         </div>
       ) : (
-        <form className="grid gap-5" onSubmit={(e) => { e.preventDefault(); if (!report?.ok) { if (canCheck) void check() } else if (ready && !starting) void install() }}>
+        <form className="grid gap-5" onSubmit={(e) => { e.preventDefault(); if (!passed) { if (canCheck) void check() } else if (ready && !starting) void install() }}>
           <p className="text-sm text-dim">
             На новый сервер ставятся Xray и агент без панели и базы, а также, по схеме с nginx, nginx с маршрутизацией по SNI на порту 443, сертификат Let&apos;s Encrypt
             и сайт-заглушка для домена ноды. Панель сама подключается по SSH, создаёт ключ для дальнейшего обслуживания и связывает ноду с собой.
@@ -194,6 +199,9 @@ export function NodeInstaller({ onClose, onDone }: { onClose: () => void; onDone
                 />
               </Field>
             )}
+            {f.createInbound && (
+              <Toggle checked={f.skipDns} onChange={(v) => set({ skipDns: v })} label="Не проверять A-запись: я создал её сам, она появится через пару минут" />
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="text-xs text-dim">Нужен вход под root, Ubuntu 22.04/24.04 или Debian 12, x86_64.</span>
               <Button variant={report ? 'default' : 'primary'} disabled={!canCheck} onClick={() => void check()}>{checking ? 'Проверяем…' : 'Проверить'}</Button>
@@ -201,7 +209,12 @@ export function NodeInstaller({ onClose, onDone }: { onClose: () => void; onDone
             {checkError && <Alert>{checkError}</Alert>}
             {report && (
               <div className="grid gap-2">
-                {report.ok ? (
+                {waitsForDns ? (
+                  <Alert tone="warn">
+                    Вход выполнен: {report.os || 'система определена'}, {report.arch}. A-запись домена {domain} пока не найдена, но проверка пропущена по вашей просьбе:
+                    установка начнётся сразу и перед выпуском сертификата подождёт запись (до 12 минут). Отпечаток ключа сервера: <code className="font-mono text-xs">{report.hostKey.slice(0, 16)}…</code>
+                  </Alert>
+                ) : report.ok ? (
                   <Alert tone="ok">
                     Вход выполнен: {report.os || 'система определена'}, {report.arch}. Отпечаток ключа сервера: <code className="font-mono text-xs">{report.hostKey.slice(0, 16)}…</code>
                     {' '}Дальше панель будет подключаться только к серверу с этим ключом.
@@ -215,7 +228,7 @@ export function NodeInstaller({ onClose, onDone }: { onClose: () => void; onDone
             )}
           </fieldset>
 
-          <fieldset className={`grid gap-3 rounded-xl border border-line p-4 ${report?.ok ? '' : 'opacity-50'}`} disabled={!report?.ok}>
+          <fieldset className={`grid gap-3 rounded-xl border border-line p-4 ${passed ? '' : 'opacity-50'}`} disabled={!passed}>
             <legend className="px-2 text-sm font-medium">Настройки ноды</legend>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Имя в подписке" hint="Так нода называется в панели и в списке серверов приложения клиента.">
@@ -246,7 +259,7 @@ export function NodeInstaller({ onClose, onDone }: { onClose: () => void; onDone
 
           {error && <Alert>{error}</Alert>}
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {report?.ok && missing.length > 0 && <span className="mr-auto text-sm text-amber-600 dark:text-amber-400">Заполните: {missing.join(', ')}</span>}
+            {passed && missing.length > 0 && <span className="mr-auto text-sm text-amber-600 dark:text-amber-400">Заполните: {missing.join(', ')}</span>}
             <Button variant="ghost" onClick={onClose}>Отмена</Button>
             <Button variant="primary" disabled={!ready || starting} onClick={() => void install()}>{starting ? 'Запускаем…' : 'Установить ноду'}</Button>
           </div>

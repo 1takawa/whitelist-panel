@@ -104,6 +104,7 @@ type NodeInstallRequest struct {
 	CreateInbound bool   `json:"createInbound"` // create that connection
 	AddClients    bool   `json:"addClients"`    // attach every existing client to it
 	ForcePort     bool   `json:"forcePort"`     // stop whatever listens on ports 80 and 443 before installing (and disable its service)
+	SkipDNSCheck  bool   `json:"skipDnsCheck"`  // the A record of the domain is not there yet: the installation waits for it instead of refusing
 }
 
 var sshUserRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
@@ -328,7 +329,11 @@ func (s *Service) StartNodeInstall(ctx context.Context, req NodeInstallRequest) 
 	if err != nil {
 		return nil, err
 	}
-	s.runJob(j, 15*time.Minute, func(ctx context.Context) error { return s.installNode(ctx, j, req) })
+	limit := 15 * time.Minute
+	if req.SkipDNSCheck && req.RealityDomain != "" {
+		limit = 30 * time.Minute // the installer may wait up to 12 minutes for the record
+	}
+	s.runJob(j, limit, func(ctx context.Context) error { return s.installNode(ctx, j, req) })
 	v := j.view()
 	return &v, nil
 }
@@ -343,6 +348,7 @@ func (s *Service) installNode(ctx context.Context, j *job, req NodeInstallReques
 		KeyName:       "anypanel-" + req.Host,
 		FreePorts:     freePorts(req),
 		RealityDomain: realityDomainFor(req),
+		SkipDNSCheck:  req.SkipDNSCheck,
 	}, func(line string) { j.logf("%s", line) })
 	if err != nil {
 		return err

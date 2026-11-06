@@ -39,10 +39,11 @@ type Report struct {
 	AgentInstalled bool         `json:"agentInstalled"`
 	PanelInstalled bool         `json:"panelInstalled"`
 	Listening      []int        `json:"listening"`
-	BusyPorts      []PortHolder `json:"busyPorts"` // ports the install needs that another program already holds
-	DomainIP       string       `json:"domainIp"`  // where the REALITY domain points (when one was asked about)
-	ServerIP       string       `json:"serverIp"`  // this machine's public address
-	Problems       []string     `json:"problems"`  // the installation cannot proceed
+	BusyPorts      []PortHolder `json:"busyPorts"`            // ports the install needs that another program already holds
+	DomainIP       string       `json:"domainIp"`             // where the REALITY domain points (when one was asked about)
+	DNSProblem     string       `json:"dnsProblem,omitempty"` // the entry of Problems that is about the domain's A record; the wizard can wave it through
+	ServerIP       string       `json:"serverIp"`             // this machine's public address
+	Problems       []string     `json:"problems"`             // the installation cannot proceed
 	Warnings       []string     `json:"warnings"`
 	OK             bool         `json:"ok"`
 }
@@ -173,9 +174,12 @@ func parseProbe(out, hostKey string, agentPort, connectPort int) *Report {
 		}
 		switch {
 		case r.DomainIP == "":
-			problem(fmt.Sprintf("у домена %s нет A-записи: создайте запись типа A на адрес %s и повторите проверку", d, r.ServerIP))
+			r.DNSProblem = fmt.Sprintf("у домена %s нет A-записи: создайте запись типа A на адрес %s и повторите проверку", d, r.ServerIP)
 		case r.DomainIP != kv["server_ip"] && r.DomainIP != kv["public_ip"]:
-			problem(fmt.Sprintf("домен %s указывает на %s, а адрес этого сервера %s: исправьте A-запись (после смены DNS может пройти несколько минут)", d, r.DomainIP, r.ServerIP))
+			r.DNSProblem = fmt.Sprintf("домен %s указывает на %s, а адрес этого сервера %s: исправьте A-запись (после смены DNS может пройти несколько минут)", d, r.DomainIP, r.ServerIP)
+		}
+		if r.DNSProblem != "" {
+			problem(r.DNSProblem)
 		}
 	}
 	r.OK = len(r.Problems) == 0
@@ -234,6 +238,9 @@ type Options struct {
 	// RealityDomain, when set, makes the installer build the nginx-SNI scheme on the node: nginx on 443 routing by SNI,
 	// a certificate for the domain and a decoy site that REALITY forwards strangers to. The domain must point at the node.
 	RealityDomain string
+	// SkipDNSCheck tells the node's installer not to refuse a domain whose A record is not there yet, but to wait for it
+	// (the admin made the record and knows it will appear in a few minutes).
+	SkipDNSCheck bool
 	// OpenPorts are TCP ports the installer opens in ufw for everyone (the connection ports clients use); the agent port
 	// is opened by the installer itself, for the panel's address only. Nothing happens when ufw is not active.
 	OpenPorts []int
@@ -336,7 +343,11 @@ func Install(ctx context.Context, o Options, log func(string)) (*Result, error) 
 
 	log("Запускаю установщик на сервере (загрузка Xray может занять минуту)…")
 	lw := &lineWriter{fn: log}
-	run := fmt.Sprintf("set -e\ncd %s\nexport ANYPANEL_AGENT_TOKEN='%s'\nexport ANYPANEL_OPEN_PORTS='%s'\nexport ANYPANEL_REALITY_DOMAIN='%s'\nbash install-node.sh --port %d --host '%s' --yes </dev/null\n", remoteDir, o.Token, portList(o.OpenPorts), o.RealityDomain, o.AgentPort, o.CertHost)
+	skip := ""
+	if o.SkipDNSCheck && o.RealityDomain != "" {
+		skip = "export ANYPANEL_SKIP_DNS_CHECK='1'\n"
+	}
+	run := fmt.Sprintf("set -e\ncd %s\nexport ANYPANEL_AGENT_TOKEN='%s'\nexport ANYPANEL_OPEN_PORTS='%s'\nexport ANYPANEL_REALITY_DOMAIN='%s'\n%sbash install-node.sh --port %d --host '%s' --yes </dev/null\n", remoteDir, o.Token, portList(o.OpenPorts), o.RealityDomain, skip, o.AgentPort, o.CertHost)
 	code, err := c.Run(ctx, "sh -s", strings.NewReader(run), lw)
 	lw.flush()
 	if err != nil {

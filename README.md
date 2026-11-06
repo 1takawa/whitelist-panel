@@ -2,7 +2,7 @@
 
 ### Панель управления Xray: VLESS и Trojan, подписки, ноды, автоузел
 
-![version](https://img.shields.io/badge/version-0.33.0-111214?style=flat-square)
+![version](https://img.shields.io/badge/version-0.34.0-111214?style=flat-square)
 ![platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20Debian-111214?style=flat-square)
 ![xray](https://img.shields.io/badge/Xray-26.10-111214?style=flat-square)
 ![go](https://img.shields.io/badge/Go-1.27-111214?style=flat-square)
@@ -229,6 +229,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/1takawa/whitelist-panel/main
 2. проверка сервера (ОС, порты, DNS домена);
 3. установка Xray и агента, при желании сразу подключение VLESS + REALITY за nginx с сайтом-заглушкой.
 
+Если A-запись домена вы создали вручную и она ещё не появилась в DNS, в мастере можно поставить галочку «Не проверять A-запись»: установка начнётся сразу, а перед выпуском сертификата сама подождёт запись (до 12 минут).
+
 Страна определяется по IP сервера сама (если её не указать). Редкие действия (перезапуск Xray, обновление агента, открытие портов,
 REALITY-сайт, новый токен) лежат в меню «⋯» на карточке сервера.
 
@@ -401,13 +403,13 @@ docs/                # установка вручную, заметки раз�
 ```bash
 cd frontend && npm ci && npm run build && cd ..
 go vet ./... && go test ./...
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=0.33.0" -o dist/anypanel ./cmd/anypanel
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=0.34.0" -o dist/anypanel ./cmd/anypanel
 cp deploy/install.sh internal/nodeinstall/install-node.sh dist/
 ```
 
 В каталоге `dist/` получится всё, что нужно установщику (`anypanel`, `install.sh`, `install-node.sh`). Подробнее для разработчиков: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-Релизы собирает GitHub Actions: тег вида `v0.33.0` запускает [workflow](.github/workflows/release.yml) и публикует архив `whitelist-panel-linux-amd64.tar.gz`.
+Релизы собирает GitHub Actions: тег вида `v0.34.0` запускает [workflow](.github/workflows/release.yml) и публикует архив `whitelist-panel-linux-amd64.tar.gz`.
 
 ---
 

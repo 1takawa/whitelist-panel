@@ -409,6 +409,7 @@ export type SshReport = {
   listening: number[]
   busyPorts: { port: number; holder: string }[]
   domainIp: string
+  dnsProblem?: string // the entry of problems that is about the domain's A record
   serverIp: string
   problems: string[]
   warnings: string[]
