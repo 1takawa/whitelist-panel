@@ -42,6 +42,7 @@ type Server struct {
 	// tokenLimiter bounds API-token requests per client IP (a burst allowance for scripts, a wall for guessing).
 	tokenLimiter *auth.Limiter
 	subPaths     subPathCache
+	pageViews    pagePreviews // pages the settings editor is previewing
 	ui           fs.FS
 	log          *slog.Logger
 }

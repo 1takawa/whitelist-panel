@@ -51,6 +51,11 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/routing-presets", a(s.routingPresets))
 	mux.HandleFunc("POST /api/settings/preview", a(s.previewTemplate))
 	mux.HandleFunc("POST /api/settings/preview-app", a(s.previewApp))
+	mux.HandleFunc("GET /api/settings/page-example", a(s.pageExample))
+	mux.HandleFunc("POST /api/settings/page-preview", a(s.pagePreviewCreate))
+	// The frame that shows the preview is sandboxed, so the browser does not send the session cookie with its request: the
+	// address itself, a random id that lives ten minutes, is what lets it in.
+	mux.HandleFunc("GET /api/settings/page-preview/{id}", s.pagePreviewShow)
 
 	mux.HandleFunc("GET /api/dashboard", a(s.dashboard))
 

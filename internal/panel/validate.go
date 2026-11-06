@@ -15,6 +15,7 @@ import (
 	"anypanel2/internal/formats"
 	"anypanel2/internal/model"
 	"anypanel2/internal/sub"
+	"anypanel2/internal/subpage"
 	"anypanel2/internal/xray"
 )
 
@@ -478,6 +479,9 @@ func normalizeSubSettings(s *model.SubSettings) error {
 	if err := normalizeAutoNode(&s.AutoNode); err != nil {
 		return err
 	}
+	if err := normalizePage(&s.Page); err != nil {
+		return err
+	}
 	return normalizeFormats(s)
 }
 
@@ -791,6 +795,22 @@ func normalizeAutoNode(a *model.AutoNodeSettings) error {
 		return invalid("automatic node tolerance must be 0–5000 ms")
 	}
 	return normalizeAutoGroups(a)
+}
+
+// normalizePage checks the administrator's page: it has to be a template that renders, or a subscriber would see an error
+// instead of their subscription. Turned on, it cannot be empty.
+func normalizePage(p *model.PageSettings) error {
+	if strings.TrimSpace(p.HTML) == "" {
+		p.HTML = ""
+		if p.Enable {
+			return invalid("the subscription page code is empty")
+		}
+		return nil
+	}
+	if err := subpage.Validate(p.HTML); err != nil {
+		return invalid("the subscription page does not work: %v", err)
+	}
+	return nil
 }
 
 const (

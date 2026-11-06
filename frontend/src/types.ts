@@ -169,6 +169,13 @@ export type SubSettings = {
   incy: IncySettings
   formats: FormatSettings
   autoNode: AutoNodeSettings
+  page: PageSettings
+}
+
+// The subscriber's page written by the administrator.
+export type PageSettings = {
+  enable: boolean
+  html: string
 }
 
 export type AutoNodeSettings = {

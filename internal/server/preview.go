@@ -75,6 +75,13 @@ func previewPage(index []byte, p model.LinkPreview, c model.Client, base string)
 func (s *Server) servePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	sb, err := s.svc.PublicSubscription(r.Context(), r.PathValue("subId"))
+	if err == nil {
+		// The administrator's own page, with the link card tags of the settings added to it as to the standard page.
+		if body, ok := s.customPage(sb); ok {
+			sendPage(w, previewPage(body, sb.Settings.Subscription.Preview, sb.Client, s.publicBase(r, sb.Settings)), false)
+			return
+		}
+	}
 	if err == nil && sb.Settings.Subscription.Preview.Mode == model.PreviewCustom {
 		if index, rerr := fs.ReadFile(s.ui, "index.html"); rerr == nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")

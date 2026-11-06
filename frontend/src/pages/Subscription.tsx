@@ -10,6 +10,7 @@ import FormatsTab from './subscription/FormatsTab'
 import HappTab from './subscription/HappTab'
 import IncyTab from './subscription/IncyTab'
 import AutoNodeTab from './subscription/AutoNodeTab'
+import PageTab from './subscription/PageTab'
 
 const TABS = [
   { id: 'general', label: 'Общие' },
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'preview', label: 'Ссылка' },
   { id: 'formats', label: 'Форматы' },
   { id: 'auto', label: 'Автоузел' },
+  { id: 'page', label: 'Страница' },
   { id: 'happ', label: 'Happ' },
   { id: 'incy', label: 'Incy' },
 ]
@@ -64,7 +66,7 @@ export default function Subscription() {
   const set = (patch: Partial<SubSettings>) => setForm((f) => (f ? { ...f, subscription: { ...f.subscription, ...patch } } : f))
   const tk = tokens.data ?? []
   // The side panel shows what the tab is about: the link card for «Ссылка», the app for the app tabs, nothing for the formats.
-  const side = tab !== 'formats'
+  const side = tab !== 'formats' && tab !== 'page'
   const appTab = tab === 'happ' || tab === 'incy'
   const shownApp: AppId = tab === 'happ' || tab === 'incy' ? tab : previewApp
   const appTitle = tab === 'happ' ? 'Предпросмотр в Happ' : tab === 'incy' ? 'Предпросмотр в INCY' : 'Предпросмотр в приложении'
@@ -277,6 +279,7 @@ export default function Subscription() {
 
           {tab === 'formats' && <FormatsTab value={sub.formats} onChange={(p) => set({ formats: { ...sub.formats, ...p } })} example={(path) => addressFor(form, path, false)} />}
           {tab === 'auto' && <AutoNodeTab value={sub.autoNode} onChange={(p) => set({ autoNode: { ...sub.autoNode, ...p } })} jsonEnabled={sub.formats.jsonEnable} clashEnabled={sub.formats.clashEnable} />}
+          {tab === 'page' && <PageTab value={sub.page ?? { enable: false, html: '' }} onChange={(p) => set({ page: { ...(sub.page ?? { enable: false, html: '' }), ...p } })} />}
           {tab === 'happ' && <HappTab value={sub.happ} onChange={(p) => set({ happ: { ...sub.happ, ...p } })} />}
           {tab === 'incy' && <IncyTab value={sub.incy} onChange={(p) => set({ incy: { ...sub.incy, ...p } })} />}
         </Tabs>

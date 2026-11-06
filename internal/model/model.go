@@ -278,8 +278,18 @@ type SubSettings struct {
 
 	AutoNode AutoNodeSettings `json:"autoNode" bson:"autoNode"`
 
+	// Page is the subscriber's page written by the administrator; off, the panel's own page is shown.
+	Page PageSettings `json:"page" bson:"page"`
+
 	// Preview is how the subscription link looks when it is pasted into a messenger.
 	Preview LinkPreview `json:"preview" bson:"preview"`
+}
+
+// PageSettings hold a page of the administrator's own design: an HTML document (a Go html/template) that is shown to a
+// browser instead of the standard page. The apps get the subscription itself as before.
+type PageSettings struct {
+	Enable bool   `json:"enable" bson:"enable"`
+	HTML   string `json:"html" bson:"html"`
 }
 
 // Link preview modes.
