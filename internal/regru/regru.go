@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -73,6 +74,31 @@ func (c *Client) Zone() string { return c.zone }
 type Error struct{ Code, Text string }
 
 func (e *Error) Error() string { return fmt.Sprintf("reg.ru: %s: %s", e.Code, e.Text) }
+
+// ConnError is a failure to reach REG.RU at all: the server the panel runs on cannot connect, the answer never comes or
+// the connection is cut. It is the server's network (or a block of its address at REG.RU), not the account's settings.
+type ConnError struct{ Err error }
+
+func (e *ConnError) Unwrap() error { return e.Err }
+
+// Timeout reports that REG.RU did not answer in time.
+func (e *ConnError) Timeout() bool {
+	var ne net.Error
+	return errors.Is(e.Err, context.DeadlineExceeded) || (errors.As(e.Err, &ne) && ne.Timeout())
+}
+
+func (e *ConnError) Error() string {
+	if e.Timeout() {
+		return "этот сервер не может подключиться к reg.ru: соединение не отвечает. Похоже, reg.ru не пускает адрес этого хостинга " +
+			"(проверьте командой curl https://api.reg.ru на сервере). Выход: другой сервер или прокси: переменная HTTPS_PROXY в /etc/anypanel.env"
+	}
+	reason := e.Err
+	var ue *url.Error
+	if errors.As(e.Err, &ue) {
+		reason = ue.Err // without the address of the request: it only repeats what is already known
+	}
+	return fmt.Sprintf("этот сервер не может подключиться к reg.ru: %v", reason)
+}
 
 // Friendly explains the error in Russian, with what to do about it.
 func (e *Error) Friendly() string {
@@ -154,7 +180,7 @@ func (c *Client) call(ctx context.Context, fn string, params map[string]any) (*d
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("нет связи с reg.ru: %w", err)
+		return nil, &ConnError{Err: err}
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))

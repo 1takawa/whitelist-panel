@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeAPI serves the zone/* functions from an in-memory record list.
@@ -46,6 +47,44 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.rrs = keep
 	}
 	json.NewEncoder(w).Encode(map[string]any{"result": "success", "answer": map[string]any{"domains": []any{dom}}})
+}
+
+func TestUnreachableRegRuIsExplainedAsAProblemOfThisServer(t *testing.T) {
+	// A server that accepts the connection and never answers: what a block of the address looks like.
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-block }))
+	t.Cleanup(func() { close(block); srv.Close() })
+	c, err := New(Config{Username: "u", Password: "p", Zone: "example.test", BaseURL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err = c.Check(ctx)
+	var ce *ConnError
+	if !errors.As(err, &ce) || !ce.Timeout() {
+		t.Fatalf("a timeout is a connection error: %v", err)
+	}
+	msg := Describe(err)
+	for _, want := range []string{"этот сервер не может подключиться к reg.ru", "не отвечает", "HTTPS_PROXY"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("%q missing from %q", want, msg)
+		}
+	}
+	for _, bad := range []string{"context deadline exceeded", "Post ", "http://"} {
+		if strings.Contains(msg, bad) {
+			t.Errorf("the technical text %q must not reach the user: %q", bad, msg)
+		}
+	}
+
+	// A refused connection says why, without repeating the address.
+	dead := httptest.NewServer(http.NotFoundHandler())
+	url := dead.URL
+	dead.Close()
+	c2, _ := New(Config{Username: "u", Password: "p", Zone: "example.test", BaseURL: url})
+	if m := Describe(c2.Check(context.Background())); !strings.HasPrefix(m, "этот сервер не может подключиться к reg.ru: ") || strings.Contains(m, "Post ") {
+		t.Errorf("%q", m)
+	}
 }
 
 func newTest(t *testing.T, f *fakeAPI) *Client {

@@ -268,7 +268,7 @@ function RegRu() {
       setKey('')
       setMade(false)
       await status.reload()
-      setNote(next.connected ? { ok: true, text: okText } : { ok: false, text: `Сохранено, но reg.ru не принял подключение: ${next.error ?? 'неизвестная ошибка'}` })
+      setNote(next.connected ? { ok: true, text: okText } : { ok: false, text: 'Сохранено, но подключиться к reg.ru не удалось: причина показана выше.' }) // the cause is already in the red block at the top
     } catch (e) {
       setNote({ ok: false, text: errText(e) })
     } finally {
