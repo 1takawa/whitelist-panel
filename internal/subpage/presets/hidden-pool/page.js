@@ -32,6 +32,14 @@
     mac: ['Скачайте приложение', 'Скачайте Happ для macOS с сайта приложения или из App Store и откройте его.']
   };
   var tabs = $('tabs');
+  /* устройство, с которого открыта ссылка: iPad с настольным Safari называет себя Mac, его отличает сенсорный экран */
+  function guessOs() {
+    var ua = navigator.userAgent, pl = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    if (/iPhone|iPad|iPod/.test(ua) || (/Mac/.test(pl + ua) && navigator.maxTouchPoints > 1)) return 'ios';
+    if (/Android/.test(ua)) return 'android';
+    if (/Mac/.test(pl + ua)) return 'mac';
+    return 'win';
+  }
   function setOs(os) {
     if (!tabs) return;
     var btn = tabs.querySelector('[data-os="' + os + '"]'), thumb = tabs.querySelector('.thumb');
@@ -41,8 +49,7 @@
   }
   if (tabs) {
     tabs.addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setOs(b.dataset.os); });
-    var ua = navigator.userAgent;
-    setOs(/iPhone|iPad/.test(ua) ? 'ios' : /Android/.test(ua) ? 'android' : /Mac/.test(ua) ? 'mac' : 'win');
+    setOs(guessOs());
     addEventListener('resize', function () { setOs(tabs.querySelector('[aria-selected=true]').dataset.os); });
   }
 
