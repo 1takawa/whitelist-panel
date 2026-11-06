@@ -107,8 +107,22 @@ func (s *Service) regruClientFor(ctx context.Context, zone string) (*regru.Clien
 	return nil, invalid("домен %s не подключён к панели: добавьте его в Настройках", zone)
 }
 
-// RegRuStatus reads the saved connection and tests it against REG.RU.
-func (s *Service) RegRuStatus(ctx context.Context) (RegRuStatus, error) {
+// regruSeen is a remembered test of the connection, valid for the credentials it was made with.
+type regruSeen struct {
+	key string
+	at  time.Time
+	st  RegRuStatus
+}
+
+const (
+	regruSeenFor       = 10 * time.Minute // how long a test result is trusted without being asked for again
+	regruStatusTimeout = 6 * time.Second  // a test made only to fill a page
+)
+
+// RegRuStatus reads the saved connection. The test against REG.RU is repeated only when asked to (refresh), after the
+// credentials changed, or when the last one is older than ten minutes; a page that opens the settings does not wait for
+// REG.RU every time.
+func (s *Service) RegRuStatus(ctx context.Context, refresh bool) (RegRuStatus, error) {
 	set, err := s.settings(ctx)
 	if err != nil {
 		return RegRuStatus{}, err
@@ -117,6 +131,38 @@ func (s *Service) RegRuStatus(ctx context.Context) (RegRuStatus, error) {
 	if err != nil {
 		return RegRuStatus{}, err
 	}
+	key := strings.Join([]string{set.RegRu.Username, set.RegRu.Zone, strings.Join(set.RegRu.ExtraZones, ","), fmt.Sprint(sec.RegRuPassword != ""), fmt.Sprint(sec.RegRuCert != "")}, "|")
+	if !refresh {
+		s.regruSeenMu.Lock()
+		seen := s.regruSeen
+		s.regruSeenMu.Unlock()
+		if seen != nil && seen.key == key && time.Since(seen.at) < regruSeenFor {
+			st := seen.st
+			st.Unused = []string{}
+			if st.Configured {
+				if orphans, err := s.regruOrphans(ctx); err == nil {
+					for _, o := range orphans {
+						st.Unused = append(st.Unused, o.Domain)
+					}
+				}
+			}
+			return st, nil
+		}
+	}
+	timeout := regruStatusTimeout
+	if refresh {
+		timeout = regruTimeout
+	}
+	st, err := s.regruStatusLive(ctx, set, sec, timeout)
+	if err == nil {
+		s.regruSeenMu.Lock()
+		s.regruSeen = &regruSeen{key: key, at: time.Now(), st: st}
+		s.regruSeenMu.Unlock()
+	}
+	return st, err
+}
+
+func (s *Service) regruStatusLive(ctx context.Context, set *model.Settings, sec *model.Secrets, timeout time.Duration) (RegRuStatus, error) {
 	st := RegRuStatus{
 		Username: set.RegRu.Username, Zone: set.RegRu.Zone, ExtraZones: set.RegRu.ExtraZones, ZoneProblems: []string{}, PasswordSet: sec.RegRuPassword != "", CertSet: sec.RegRuCert != "" && sec.RegRuKey != "",
 	}
@@ -137,7 +183,7 @@ func (s *Service) RegRuStatus(ctx context.Context) (RegRuStatus, error) {
 		st.Error = err.Error()
 		return st, nil
 	}
-	cctx, cancel := context.WithTimeout(ctx, regruTimeout)
+	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if err := c.Check(cctx); err != nil {
 		st.Error = regru.Describe(err)
@@ -282,11 +328,14 @@ func (s *Service) SaveRegRu(ctx context.Context, in RegRuSave) (RegRuStatus, err
 	if err != nil {
 		return RegRuStatus{}, err
 	}
-	return s.RegRuStatus(ctx)
+	return s.RegRuStatus(ctx, true)
 }
 
 // DisconnectRegRu forgets the login, password, certificate and zone.
 func (s *Service) DisconnectRegRu(ctx context.Context) error {
+	s.regruSeenMu.Lock()
+	s.regruSeen = nil
+	s.regruSeenMu.Unlock()
 	s.secretsMu.Lock()
 	sec, err := s.Store.GetSecrets(ctx)
 	if err == nil {

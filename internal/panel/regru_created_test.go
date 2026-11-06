@@ -131,7 +131,7 @@ func TestAbandonedDomainsAreOfferedForCleanup(t *testing.T) {
 	svc.Now = func() time.Time { return now }
 
 	fresh, freshSub := generated(t, svc, "198.51.100.7")
-	st, _ := svc.RegRuStatus(ctx)
+	st, _ := svc.RegRuStatus(ctx, true)
 	if len(st.Unused) != 0 {
 		t.Fatalf("a name made a minute ago belongs to the wizard that is still open: %v", st.Unused)
 	}
@@ -140,7 +140,7 @@ func TestAbandonedDomainsAreOfferedForCleanup(t *testing.T) {
 	}
 
 	now = now.Add(time.Hour)
-	st, _ = svc.RegRuStatus(ctx)
+	st, _ = svc.RegRuStatus(ctx, true)
 	if len(st.Unused) != 1 || st.Unused[0] != fresh {
 		t.Fatalf("an hour later it is abandoned: %v", st.Unused)
 	}
@@ -151,7 +151,7 @@ func TestAbandonedDomainsAreOfferedForCleanup(t *testing.T) {
 	if _, ok := f.has(freshSub); ok {
 		t.Fatal("the abandoned record is removed")
 	}
-	if st, _ = svc.RegRuStatus(ctx); len(st.Unused) != 0 {
+	if st, _ = svc.RegRuStatus(ctx, true); len(st.Unused) != 0 {
 		t.Fatalf("nothing left: %v", st.Unused)
 	}
 
@@ -255,7 +255,7 @@ func TestDeleteReportsARecordThatCouldNotBeRemoved(t *testing.T) {
 	f.mu.Lock()
 	f.deny = false
 	f.mu.Unlock()
-	st, _ := svc.RegRuStatus(ctx)
+	st, _ := svc.RegRuStatus(ctx, true)
 	if len(st.Unused) != 1 || st.Unused[0] != domain {
 		t.Fatalf("it is offered for cleanup: %v", st.Unused)
 	}

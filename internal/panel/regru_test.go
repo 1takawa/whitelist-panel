@@ -112,7 +112,7 @@ func TestRegRuSaveAndStatus(t *testing.T) {
 	ctx := context.Background()
 	svc, f := regruSetup(t)
 
-	if st, _ := svc.RegRuStatus(ctx); st.Configured || st.Connected {
+	if st, _ := svc.RegRuStatus(ctx, true); st.Configured || st.Connected {
 		t.Fatalf("nothing is saved yet: %+v", st)
 	}
 	for name, in := range map[string]RegRuSave{
@@ -126,7 +126,7 @@ func TestRegRuSaveAndStatus(t *testing.T) {
 			t.Errorf("%s: want a validation error, got %v", name, err)
 		}
 	}
-	if st, _ := svc.RegRuStatus(ctx); st.PasswordSet {
+	if st, _ := svc.RegRuStatus(ctx, true); st.PasswordSet {
 		t.Fatal("a rejected form stores nothing")
 	}
 
@@ -145,7 +145,7 @@ func TestRegRuSaveAndStatus(t *testing.T) {
 	if _, err := svc.PutSettings(ctx, cp); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := svc.RegRuStatus(ctx); st.Username != "me" || !st.Connected {
+	if st, _ := svc.RegRuStatus(ctx, true); st.Username != "me" || !st.Connected {
 		t.Fatalf("the settings form must not touch the connection: %+v", st)
 	}
 
@@ -156,7 +156,7 @@ func TestRegRuSaveAndStatus(t *testing.T) {
 
 	// REG.RU refuses this server: the user is told which address to allow.
 	f.deny = true
-	st, _ = svc.RegRuStatus(ctx)
+	st, _ = svc.RegRuStatus(ctx, true)
 	if st.Connected || st.ServerIP != "192.0.2.77" || !strings.Contains(st.Error, "разрешённые IP") {
 		t.Fatalf("denied status: %+v", st)
 	}
@@ -171,7 +171,7 @@ func TestRegRuSaveAndStatus(t *testing.T) {
 	if err := svc.DisconnectRegRu(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := svc.RegRuStatus(ctx); st.Configured || st.PasswordSet || st.Username != "" {
+	if st, _ := svc.RegRuStatus(ctx, true); st.Configured || st.PasswordSet || st.Username != "" {
 		t.Fatalf("disconnect forgets everything: %+v", st)
 	}
 	if _, err := svc.RegRuDomains(ctx); !isInvalid(err) {
@@ -278,7 +278,61 @@ func TestRegRuSecretsInFullExportOnly(t *testing.T) {
 	if _, err := svc.ImportDB(ctx, full, ImportOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := svc.RegRuStatus(ctx); !st.Connected {
+	if st, _ := svc.RegRuStatus(ctx, true); !st.Connected {
 		t.Fatalf("import restores the connection: %+v", st)
+	}
+}
+
+// A page that only shows the status must not call REG.RU every time: the last test counts for ten minutes.
+func TestRegRuStatusIsTestedRarely(t *testing.T) {
+	ctx := context.Background()
+	svc, f := regruSetup(t)
+	if st := connect(t, svc); !st.Connected {
+		t.Fatalf("%+v", st)
+	}
+
+	// REG.RU starts refusing, but an ordinary look at the status still shows the last test.
+	f.mu.Lock()
+	f.deny = true
+	f.mu.Unlock()
+	if st, _ := svc.RegRuStatus(ctx, false); !st.Connected {
+		t.Fatalf("the page shows the remembered result: %+v", st)
+	}
+	// A real check, asked for by the admin, tests again, and the next plain look shows that result.
+	if st, _ := svc.RegRuStatus(ctx, true); st.Connected || st.Error == "" {
+		t.Fatalf("refresh tests against REG.RU: %+v", st)
+	}
+	if st, _ := svc.RegRuStatus(ctx, false); st.Connected {
+		t.Fatalf("the new result is the remembered one: %+v", st)
+	}
+
+	// Changing the credentials makes the old result worthless.
+	f.mu.Lock()
+	f.deny = false
+	f.mu.Unlock()
+	if _, err := svc.SaveRegRu(ctx, RegRuSave{Username: "me", Zone: "example.test"}); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := svc.RegRuStatus(ctx, false); !st.Connected {
+		t.Fatalf("saving tests again: %+v", st)
+	}
+
+	// An old result is not trusted either.
+	svc.regruSeenMu.Lock()
+	svc.regruSeen.at = svc.regruSeen.at.Add(-11 * time.Minute)
+	svc.regruSeenMu.Unlock()
+	f.mu.Lock()
+	f.deny = true
+	f.mu.Unlock()
+	if st, _ := svc.RegRuStatus(ctx, false); st.Connected {
+		t.Fatalf("after ten minutes the status is tested again: %+v", st)
+	}
+
+	// Disconnecting forgets it.
+	if err := svc.DisconnectRegRu(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := svc.RegRuStatus(ctx, false); st.Configured || st.Connected {
+		t.Fatalf("%+v", st)
 	}
 }

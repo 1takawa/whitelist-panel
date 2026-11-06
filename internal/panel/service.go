@@ -75,6 +75,10 @@ type Service struct {
 	RegRuBase string
 	PublicIP  func(ctx context.Context) (string, error)
 	regruMu   sync.Mutex // one DNS change at a time, so two generated names never collide
+	// regruSeen is the last test of the REG.RU connection: the settings page and the wizards ask for the status all the time
+	// and each test is a request to REG.RU that may take its whole timeout when the server cannot reach it.
+	regruSeenMu sync.Mutex
+	regruSeen   *regruSeen
 
 	mu       sync.Mutex
 	lastHash [32]byte

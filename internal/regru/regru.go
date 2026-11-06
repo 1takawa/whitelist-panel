@@ -89,8 +89,7 @@ func (e *ConnError) Timeout() bool {
 
 func (e *ConnError) Error() string {
 	if e.Timeout() {
-		return "этот сервер не может подключиться к reg.ru: соединение не отвечает. Похоже, reg.ru не пускает адрес этого хостинга " +
-			"(проверьте командой curl https://api.reg.ru на сервере). Выход: другой сервер или прокси: переменная HTTPS_PROXY в /etc/anypanel.env"
+		return "этот сервер не может подключиться к reg.ru: соединение не отвечает (возможно, reg.ru блокирует адрес этого хостинга)"
 	}
 	reason := e.Err
 	var ue *url.Error

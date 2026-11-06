@@ -9,7 +9,7 @@ import (
 // ---- REG.RU: the DNS of the panel's domain ----
 
 func (s *Server) regruStatus(w http.ResponseWriter, r *http.Request) {
-	v, err := s.svc.RegRuStatus(r.Context())
+	v, err := s.svc.RegRuStatus(r.Context(), r.URL.Query().Get("refresh") != "")
 	s.respond(w, v, err)
 }
 

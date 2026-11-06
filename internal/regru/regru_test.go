@@ -66,7 +66,7 @@ func TestUnreachableRegRuIsExplainedAsAProblemOfThisServer(t *testing.T) {
 		t.Fatalf("a timeout is a connection error: %v", err)
 	}
 	msg := Describe(err)
-	for _, want := range []string{"этот сервер не может подключиться к reg.ru", "не отвечает", "HTTPS_PROXY"} {
+	for _, want := range []string{"этот сервер не может подключиться к reg.ru", "не отвечает", "блокирует адрес"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("%q missing from %q", want, msg)
 		}

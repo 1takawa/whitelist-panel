@@ -16,26 +16,66 @@ const icons: Record<string, ReactNode> = {
   key: <><circle cx="8" cy="15" r="4" /><path d="m11 12 9-9M16 7l3 3" /></>,
   bot: <><rect x="4" y="8" width="16" height="11" rx="3" /><path d="M12 4v4M9 13v1M15 13v1" /></>,
   refresh: <path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" />,
+  chevron: <path d="m6 9 6 6 6-6" />,
   db: <><ellipse cx="12" cy="6" rx="8" ry="3" /><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></>,
 }
 
-// One settings block: icon, title, short description, optional control on the right, then the content.
-function Section({ icon, title, hint, aside, children }: { icon: string; title: string; hint: string; aside?: ReactNode; children: ReactNode }) {
+// One settings block: icon, title, short description, optional control on the right, then the content. With a key the block
+// can be folded, and the choice is remembered in this browser; until it is made the block is open when defaultOpen says so.
+function Section({ icon, title, hint, aside, foldKey, defaultOpen = true, children }: { icon: string; title: string; hint: string; aside?: ReactNode; foldKey?: string; defaultOpen?: boolean; children: ReactNode }) {
+  const [chosen, setChosen] = useState<boolean | null>(() => {
+    try {
+      const v = foldKey ? localStorage.getItem(`ap-fold-${foldKey}`) : null
+      return v === null ? null : v === '1'
+    } catch {
+      return null
+    }
+  })
+  const open = foldKey ? (chosen ?? defaultOpen) : true
+  const toggle = () => {
+    setChosen(!open)
+    try {
+      localStorage.setItem(`ap-fold-${foldKey}`, open ? '0' : '1')
+    } catch {
+      // the choice just is not remembered
+    }
+  }
+  const svg = (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0 text-dim" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {icons[icon]}
+    </svg>
+  )
   return (
     <Card>
       <div className="flex items-center justify-between gap-3 px-5 py-4">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <svg viewBox="0 0 24 24" className="size-4 shrink-0 text-dim" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              {icons[icon]}
-            </svg>
-            {title}
+            {foldKey ? (
+              <button type="button" onClick={toggle} aria-expanded={open} className="flex items-center gap-2 text-left">
+                {svg}
+                {title}
+              </button>
+            ) : (
+              <>
+                {svg}
+                {title}
+              </>
+            )}
             <Hint text={hint} />
           </h2>
         </div>
-        {aside}
+        <div className="flex shrink-0 items-center gap-2">
+          {aside}
+          {foldKey && (
+            <button type="button" onClick={toggle} aria-label={open ? 'Свернуть' : 'Развернуть'} aria-expanded={open} className="grid size-7 place-items-center rounded-md text-dim transition-colors hover:bg-surface-2 hover:text-ink">
+              <svg viewBox="0 0 24 24" className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                {icons.chevron}
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
-      <div className="border-t border-line p-5">{children}</div>
+      {open && <div className="border-t border-line p-5">{children}</div>}
     </Card>
   )
 }
@@ -245,6 +285,11 @@ function RegRu() {
   async function recheck() {
     setBusy(true)
     setNote(null)
+    try {
+      await api<RegRuStatus>('/api/regru?refresh=1') // a real test against reg.ru; the page itself uses the last one
+    } catch {
+      // the status below shows what went wrong
+    }
     await status.reload()
     setBusy(false)
   }
@@ -291,6 +336,8 @@ function RegRu() {
       icon="globe"
       title="DNS в reg.ru"
       hint="Домен куплен в reg.ru: при добавлении сервера панель сама создаёт поддомен с A-записью на его адрес или берёт уже созданный."
+      foldKey="regru"
+      defaultOpen={!!st?.configured}
       aside={<Badge tone={tone}>{label}</Badge>}
     >
       {st?.configured && !st.connected && st.error && <div className="mb-4"><Alert>{st.error}</Alert></div>}
