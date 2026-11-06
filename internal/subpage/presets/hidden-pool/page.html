@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#090a0c">
 <title>Hidden Pool</title>
 </head>
@@ -27,11 +27,13 @@
         <span class="eyebrow"><i></i>ВАША ПОДПИСКА</span>
         <h1 id="title">{{if eq .status "active"}}{{if and .hasExpiry (le .daysLeft 7)}}Срок <em>подходит</em>{{else}}Доступ <em>открыт</em>{{end}}{{else if eq .status "expired"}}Доступ <em>закрыт</em>{{else if eq .status "exhausted"}}Трафик <em>закончился</em>{{else}}Подписка <em>отключена</em>{{end}}</h1>
         <p class="lead">{{if eq .status "active"}}{{if and .hasExpiry (le .daysLeft 7)}}Подписка работает, но скоро закончится. Продлите заранее, чтобы не потерять доступ.{{else}}Одна ссылка работает на всех ваших устройствах. Добавьте её в приложение один раз.{{end}}{{else if eq .status "expired"}}Срок подписки закончился, ссылка больше не открывает серверы. Продлите её, и всё заработает снова.{{else if eq .status "exhausted"}}Лимит трафика использован. Он обновится в начале следующего периода или после продления.{{else}}Подписка отключена. Если это ошибка, напишите в поддержку.{{end}}</p>
+        {{if and .hasUrl (eq .status "active")}}<a class="btn btn-ink hero-cta" href="{{(index .apps 0).openUrl}}">Добавить в {{(index .apps 0).name}}<span class="bi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></span></a>{{end}}
         <div class="who"><span class="pill {{if eq .status "active"}}{{if and .hasExpiry (le .daysLeft 7)}}warn{{else}}ok{{end}}{{else if eq .status "disabled"}}{{else if eq .status "expired"}}bad{{else}}warn{{end}}">{{.statusLabel}}</span><code>{{.name}}</code></div>
       </div>
 
       <aside class="card link-card rv{{if ne .status "active"}} is-off{{end}}" aria-label="Ссылка подписки">
         {{if .hasUrl}}
+        <button class="btn btn-ghost qr-toggle" type="button" id="qrToggle" aria-expanded="false">Показать QR-код</button>
         <div class="qr" role="img" aria-label="QR-код подписки">{{.qrSvg}}</div>
         <div class="cap"><span>QR подписки</span><span>{{if ne .status "active"}}ссылка не работает{{else}}наведите камеру{{end}}</span></div>
         <div class="copybox">

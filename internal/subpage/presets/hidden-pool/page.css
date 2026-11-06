@@ -209,3 +209,42 @@ em{font-family:var(--p-display);font-weight:400;letter-spacing:-.045em}
 }
 @media(prefers-reduced-transparency:reduce){
 }
+
+/* ---- узкие вертикальные экраны (телефон, окно приложения) ---- */
+html{-webkit-tap-highlight-color:transparent}
+a,button{touch-action:manipulation}
+.bar{padding-top:env(safe-area-inset-top)}
+.foot{padding-bottom:calc(44px + env(safe-area-inset-bottom))}
+.hero-cta,.qr-toggle{display:none}
+@media(max-width:920px){
+  .hero-cta{display:inline-flex;width:100%;max-width:440px;margin-top:22px}
+}
+@media(max-width:640px){
+  .bar nav{gap:0}
+  .bar nav a{display:inline-flex;align-items:center;min-height:44px;padding:0 9px;font-size:12px}
+  .brand{gap:9px} .brand img:last-child{height:11px}
+  .hero{padding-top:calc(var(--bar-h) + 28px);padding-bottom:40px}
+  .hero h1{font-size:clamp(40px,12.5vw,56px)}
+  .lead{font-size:15px}
+  .link-card{padding:16px}
+  .qr,.link-card .cap{display:none}
+  .link-card.qr-open .qr{display:block;margin-bottom:6px}
+  .link-card.qr-open .cap{display:flex}
+  .qr-toggle{display:inline-flex;width:100%;margin-bottom:12px}
+  .tabs{display:flex;width:100%}
+  .tabs button{flex:1;min-width:0;padding:0 4px;min-height:44px}
+  .icon-btn{width:44px;height:44px}
+  .copybox .btn{min-height:44px}
+  .section{margin-top:72px}
+  .section-head h2{font-size:clamp(32px,10vw,44px)}
+  .foot{margin-top:80px}
+}
+@media(max-width:340px){
+  .brand img:last-child{display:none}
+  .hero h1{font-size:38px}
+  .app .btn{padding:0 12px}
+}
+@media(max-height:480px) and (orientation:landscape){
+  .hero{padding-top:calc(var(--bar-h) + 16px)}
+  .hero-art,.hero-shade{height:520px}
+}

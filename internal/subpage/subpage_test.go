@@ -109,6 +109,10 @@ func TestHiddenPoolPresetRendersWithItsFields(t *testing.T) {
 	if strings.Contains(s, ">Сайт<") {
 		t.Error("an empty site field hides the link")
 	}
+	// Narrow screens: the main action is under the headline, and the QR code is folded away.
+	if !strings.Contains(s, `class="btn btn-ink hero-cta" href="happ://add/`) || !strings.Contains(s, `id="qrToggle"`) || !strings.Contains(s, "viewport-fit=cover") {
+		t.Error("the page is adapted for phones")
+	}
 	// A saved value wins, an empty saved value hides the link, and a value never saved falls back to the preset's.
 	vals = pr.Values(map[string]string{"site": "https://example.org", "telegram": ""})
 	out, _ = Render(pr.Page(), SampleWith(vals))

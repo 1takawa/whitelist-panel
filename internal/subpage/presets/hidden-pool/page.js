@@ -17,6 +17,13 @@
     });
   });
 
+  /* на узком экране QR свёрнут: свой телефон не отсканировать, а второй под рукой не всегда */
+  var qrT = $('qrToggle');
+  if (qrT) qrT.addEventListener('click', function () {
+    var open = qrT.closest('.link-card').classList.toggle('qr-open');
+    qrT.setAttribute('aria-expanded', open); qrT.textContent = open ? 'Скрыть QR-код' : 'Показать QR-код';
+  });
+
   /* устройства: откуда взять приложение */
   var OS = {
     ios: ['Установите приложение', 'Откройте App Store и установите Happ. Это бесплатно.'],
