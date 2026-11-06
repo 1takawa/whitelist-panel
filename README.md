@@ -343,7 +343,7 @@ curl -X POST https://panel.example.com/api/clients \
 |---|---|
 | `anypanel serve` | запускает панель |
 | `anypanel init-admin ЛОГИН` | создаёт или сбрасывает администратора (пароль со stdin, от 10 символов) |
-| `anypanel set-domains ПАНЕЛЬ REALITY` | сохраняет домены для ссылок |
+| `anypanel set-domains ПАНЕЛЬ REALITY` | задаёт домены вручную (домен панели и так берётся из `PANEL_PUBLIC_URL` при каждом запуске) |
 | `anypanel import-legacy ФАЙЛ [--dry-run]` | импорт пользователей из прежней панели |
 | `anypanel agent` | агент дополнительного сервера |
 | `anypanel version` | версия |

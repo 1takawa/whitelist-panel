@@ -147,6 +147,10 @@ func cmdServe(log *slog.Logger, args []string) error {
 		}
 	}()
 	svc.Version = version
+	svc.PanelHost = panel.HostOfURL(cfg.PublicURL)
+	if err := svc.SyncPanelDomain(ctx); err != nil {
+		log.Warn("could not set the panel domain from PANEL_PUBLIC_URL", "err", err)
+	}
 	svc.PublicIP = panel.LookupPublicIP // the domain checks compare with this machine's real address
 	svc.Update = &update.Updater{Repo: os.Getenv("WHITELIST_REPO"), Dir: filepath.Join(cfg.StateDir, "update")}
 	svc.RegRuBase = os.Getenv("REGRU_API_URL") // empty = the real REG.RU API; set to a stand-in only for testing

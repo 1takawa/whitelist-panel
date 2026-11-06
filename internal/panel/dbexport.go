@@ -436,7 +436,11 @@ func (s *Service) importFull(ctx context.Context, exp Export, opts ImportOptions
 	// were made elsewhere: after a move to another server the file still names the old one, whose address the domain
 	// checks would then take for this server's. So this server's own domains stay (a fresh panel without any takes the file's).
 	var kept []string
-	if d := old.Settings.PanelDomain; d != "" {
+	ownPanel := old.Settings.PanelDomain
+	if s.PanelHost != "" {
+		ownPanel = s.PanelHost // the domain this panel is served on, whatever the settings held
+	}
+	if d := ownPanel; d != "" {
 		if snap.Settings.PanelDomain != "" && snap.Settings.PanelDomain != d {
 			kept = append(kept, "домен панели в файле "+snap.Settings.PanelDomain+" заменён на домен этого сервера "+d)
 		}

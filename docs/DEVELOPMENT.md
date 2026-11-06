@@ -304,7 +304,7 @@ LISTEN_ADDR=127.0.0.1:28270 COOKIE_SECURE=false STATE_DIR=./data ANYPANEL_DEV_AD
 |---|---|
 | `anypanel serve` | запускает панель |
 | `anypanel init-admin ЛОГИН` | создаёт/сбрасывает администратора, пароль со stdin (от 10 символов) |
-| `anypanel set-domains ПАНЕЛЬ REALITY` | сохраняет домены для ссылок |
+| `anypanel set-domains ПАНЕЛЬ REALITY` | задаёт домены вручную (домен панели и так берётся из `PANEL_PUBLIC_URL` при каждом запуске) |
 | `anypanel import-legacy ФАЙЛ [--dry-run]` | импорт пользователей из прежней панели (ФАЙЛ или `-` для stdin) |
 | `anypanel agent [--print-fingerprint]` | агент дополнительного сервера (запускается установщиком `install-node.sh`) |
 | `anypanel version` | версия |

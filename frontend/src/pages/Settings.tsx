@@ -5,7 +5,7 @@ import { Alert, Badge, Button, Card, CopyButton, Field, Hint, Input, PageHeader,
 import { ask } from '../components/confirm'
 import { useLoad } from '../hooks'
 import { formatDate } from '../lib'
-import type { ImportReport, RegRuCertificate, RegRuStatus, Settings as SettingsT, TelegramStatus, UpdateInfo } from '../types'
+import type { ImportReport, RegRuCertificate, RegRuStatus, TelegramStatus, UpdateInfo } from '../types'
 
 const errText = (e: unknown) => (e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e))
 
@@ -57,56 +57,6 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 
 function Message({ note }: { note: Note }) {
   return note ? <div className="mt-3"><Alert tone={note.ok ? 'ok' : 'bad'}>{note.text}</Alert></div> : null
-}
-
-// ---- domains ----
-
-function Domains() {
-  const { data, error } = useLoad<SettingsT>('/api/settings')
-  const [panel, setPanel] = useState('')
-  const [reality, setReality] = useState('')
-  const [note, setNote] = useState<Note>(null)
-  const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    if (data) {
-      setPanel(data.panelDomain)
-      setReality(data.realityDomain)
-    }
-  }, [data])
-
-  async function save() {
-    setBusy(true)
-    setNote(null)
-    try {
-      // Settings are one document: read the current one so the bot and subscription settings saved elsewhere stay intact.
-      const cur = await api<SettingsT>('/api/settings')
-      const saved = await api<SettingsT>('/api/settings', { method: 'PUT', body: { ...cur, panelDomain: panel, realityDomain: reality } })
-      setPanel(saved.panelDomain)
-      setReality(saved.realityDomain)
-      setNote({ ok: true, text: 'Сохранено.' })
-    } catch (e) {
-      setNote({ ok: false, text: errText(e) })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Section icon="globe" title="Домены для ссылок" hint="Подставляются в ссылки клиентов, если у подключения не указан свой адрес.">
-      {error && <Alert>{error}</Alert>}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Домен панели" hint="WebSocket, gRPC, XHTTP и Trojan за Caddy и ссылка подписки">
-          <Input value={panel} onChange={(e) => setPanel(e.target.value)} placeholder="panel.example.com" />
-        </Field>
-        <Field label="Домен REALITY" hint="VLESS + REALITY: nginx направляет на него SNI">
-          <Input value={reality} onChange={(e) => setReality(e.target.value)} placeholder="reality.example.com" />
-        </Field>
-      </div>
-      <Message note={note} />
-      <div className="mt-4 flex justify-end"><Button variant="primary" onClick={save} disabled={busy || !data}>{busy ? 'Сохраняем…' : 'Сохранить'}</Button></div>
-    </Section>
-  )
 }
 
 // ---- administrator account ----
@@ -660,7 +610,6 @@ export default function Settings() {
     <section className="max-w-4xl">
       <PageHeader title="Настройки" />
       <div className="grid gap-5">
-        <Domains />
         <Updates />
         <RegRu />
         <div className="grid items-start gap-5 lg:grid-cols-2">

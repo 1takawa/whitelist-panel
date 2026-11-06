@@ -106,7 +106,7 @@ export default function Inbounds() {
         {error && <Alert>{error}</Alert>}
         {warning && <Alert tone="warn">{warning}</Alert>}
         {!s.panelDomain && !s.realityDomain && !settings.loading && (
-          <Alert tone="warn">Не заданы домены в «Настройках»: ссылки для клиентов не смогут быть собраны.</Alert>
+          <Alert tone="warn">Не задан домен панели: ссылки для клиентов не смогут быть собраны. Он берётся из адреса, на котором работает панель (PANEL_PUBLIC_URL).</Alert>
         )}
       </div>
 

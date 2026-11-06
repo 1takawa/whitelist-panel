@@ -62,6 +62,9 @@ type Service struct {
 	Installer  NodeInstaller   // SSH installation of nodes; nil means the real one (replaced in tests)
 	Routing    *routing.Source // RoscomVPN routing profiles; nil means the built-in copies only
 	Update     *update.Updater // looks for newer releases and installs them; nil = not available here
+	// PanelHost is the domain the panel is served on (the host of PANEL_PUBLIC_URL), "" when it is not a domain name. It is
+	// the panel domain of the settings: no form, no imported file can say otherwise.
+	PanelHost string
 	// SNI manages the extra REALITY domains of the main server (nginx map, decoy sites); nil = not available here.
 	SNI SNIFront
 	// LookupHost resolves a domain (nil = the system resolver; replaced in tests).
@@ -827,6 +830,9 @@ func (s *Service) GetSettings(ctx context.Context) (*model.Settings, error) { re
 func (s *Service) PutSettings(ctx context.Context, v model.Settings) (*model.Settings, error) {
 	if err := normalizeSettings(&v); err != nil {
 		return nil, err
+	}
+	if s.PanelHost != "" {
+		v.PanelDomain = s.PanelHost
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
