@@ -181,6 +181,18 @@ export type AutoNodeSettings = {
   intervalSec: number
   timeoutSec: number
   toleranceMs: number
+  groups: AutoGroup[]
+}
+
+// One more automatic node over its own connections.
+export type AutoGroup = {
+  id: string
+  name: string
+  country: string
+  enable: boolean
+  members: string[]
+  last: boolean
+  position: number
 }
 
 export type FormatSettings = {

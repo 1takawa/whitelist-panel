@@ -124,16 +124,36 @@ func detectFormat(set model.SubSettings, ua string) kind {
 // not the separate JSON address is switched on.
 func wantsAutoNodeJSON(set model.SubSettings, ua string, eps []links.Endpoint) bool {
 	a := set.AutoNode
-	if !a.Enable || a.KeepLinks || !matches(autoNodeAppsRe, ua) {
+	if a.KeepLinks || !matches(autoNodeAppsRe, ua) {
 		return false
 	}
-	n := 0
-	for _, e := range eps {
-		if !e.NoAuto {
-			n++
+	if a.Enable {
+		n := 0
+		for _, e := range eps {
+			if !e.NoAuto {
+				n++
+			}
+		}
+		if n >= 2 {
+			return true
 		}
 	}
-	return n >= 2
+	have := map[string]bool{}
+	for _, e := range eps {
+		have[e.ID] = true
+	}
+	for _, g := range a.Groups {
+		n := 0
+		for _, id := range g.Members {
+			if have[id] {
+				n++
+			}
+		}
+		if g.Enable && n >= 2 {
+			return true
+		}
+	}
+	return false
 }
 
 // autoNodeAppsRe matches the User-Agent of the apps that take the automatic node from the JSON format.
@@ -229,9 +249,27 @@ func autoOptions(a model.AutoNodeSettings) *formats.AutoOptions {
 	return &formats.AutoOptions{Name: a.Name, Last: a.Last, Position: a.Position, URL: a.ProbeURL, IntervalSec: a.IntervalSec, TimeoutSec: a.TimeoutSec, ToleranceMs: a.ToleranceMs}
 }
 
+// moreAutoOptions are the options of the extra automatic nodes that are on, each over its own connections.
+func moreAutoOptions(a model.AutoNodeSettings) []*formats.AutoOptions {
+	var out []*formats.AutoOptions
+	for _, g := range a.Groups {
+		if !g.Enable {
+			continue
+		}
+		members := make(map[string]bool, len(g.Members))
+		for _, id := range g.Members {
+			members[id] = true
+		}
+		out = append(out, &formats.AutoOptions{Name: g.DisplayName(), Last: g.Last, Position: g.Position, URL: a.ProbeURL,
+			IntervalSec: a.IntervalSec, TimeoutSec: a.TimeoutSec, ToleranceMs: a.ToleranceMs, Members: members})
+	}
+	return out
+}
+
 func (s *Server) clash(sb *panel.Subscription) ([]byte, error) {
 	f := sb.Settings.Subscription.Formats
-	opt := formats.ClashOptions{RemoteDNS: f.ClashRemoteDNS, Info: sb.InfoNames, Auto: autoOptions(sb.Settings.Subscription.AutoNode)}
+	an := sb.Settings.Subscription.AutoNode
+	opt := formats.ClashOptions{RemoteDNS: f.ClashRemoteDNS, Info: sb.InfoNames, Auto: autoOptions(an), MoreAuto: moreAutoOptions(an)}
 	if f.ClashEnableRouting {
 		rules, err := formats.ParseClashRules(f.ClashRules)
 		if err != nil {
@@ -246,7 +284,7 @@ func (s *Server) xrayJSON(sb *panel.Subscription, ua string) ([]byte, error) {
 	f := sb.Settings.Subscription.Formats
 	return formats.XrayJSON(sb.Endpoints, formats.JSONOptions{
 		AlwaysArray: f.JSONAlwaysArray, Mux: f.JSONMux, Fragment: f.JSONFragment, Noises: f.JSONNoises,
-		Rules: f.JSONRules, DNS: f.JSONDNS, Info: sb.InfoNames, Auto: autoOptions(sb.Settings.Subscription.AutoNode),
+		Rules: f.JSONRules, DNS: f.JSONDNS, Info: sb.InfoNames, Auto: autoOptions(sb.Settings.Subscription.AutoNode), MoreAuto: moreAutoOptions(sb.Settings.Subscription.AutoNode),
 		Profile: appRoutingProfile(sb.Settings.Subscription, ua),
 	})
 }

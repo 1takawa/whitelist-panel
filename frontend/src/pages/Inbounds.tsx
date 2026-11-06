@@ -7,8 +7,10 @@ import { ask } from '../components/confirm'
 import { Alert, Badge, Button, Card, IconButton, PageHeader, StatusChip, Switch } from '../components/ui'
 import { useLoad } from '../hooks'
 import { formatBytes } from '../lib'
-import type { Cascade, Inbound, Saved, Settings } from '../types'
+import { flagOf as flagOfCountry } from '../countries'
+import type { AutoGroup, Cascade, Inbound, Saved, Settings } from '../types'
 import type { ServerInfo } from '../types'
+import AutoGroupForm from './AutoGroupForm'
 import InboundForm from './InboundForm'
 import type { Domains } from './inboundPresets'
 
@@ -19,6 +21,7 @@ const LEAD_FLAG = /^[\u{1F1E6}-\u{1F1FF}]{2}\s*/u
 const stoppedByLimit = (r: Inbound) => (r.totalBytes > 0 && r.up + r.down >= r.totalBytes) || (r.expiryAt !== null && new Date(r.expiryAt) <= new Date())
 
 const AUTO = '__auto__' // the automatic node among the rows
+const groupSlot = (id: string) => `${AUTO}:${id}` // an extra automatic node
 
 export default function Inbounds() {
   const nav = useNavigate()
@@ -27,6 +30,7 @@ export default function Inbounds() {
   const servers = useLoad<ServerInfo[]>('/api/servers')
   const cascades = useLoad<Cascade[]>('/api/cascades')
   const [editing, setEditing] = useState<Inbound | 'new' | null>(null)
+  const [editingGroup, setEditingGroup] = useState<AutoGroup | 'new' | null>(null)
   const [warning, setWarning] = useState('')
   const [error, setError] = useState('')
   const delays = useRef(new Map<string, number>())
@@ -69,14 +73,44 @@ export default function Inbounds() {
     }
   }
 
-  // The order of the subscriptions: by SortOrder (equal ones as created), the automatic node where it was placed.
+  // Changes the extra automatic nodes: the settings are read again first, so nothing saved elsewhere is overwritten.
+  async function saveGroups(change: (groups: AutoGroup[]) => AutoGroup[]) {
+    const fresh = await api<Settings>('/api/settings')
+    const an = fresh.subscription.autoNode
+    await api<Settings>('/api/settings', { method: 'PUT', body: { ...fresh, subscription: { ...fresh.subscription, autoNode: { ...an, groups: change(an.groups ?? []) } } } })
+    await settings.reload()
+  }
+  async function guarded(run: () => Promise<void>) {
+    setError('')
+    try {
+      await run()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+  const removeGroup = (g: AutoGroup) =>
+    guarded(async () => {
+      if (!(await ask(`Удалить автоузел «${g.name}»? Подключения в нём останутся.`, { confirmLabel: 'Удалить' }))) return
+      await saveGroups((gs) => gs.filter((x) => x.id !== g.id))
+    })
+  const toggleGroup = (g: AutoGroup) => guarded(() => saveGroups((gs) => gs.map((x) => (x.id === g.id ? { ...x, enable: !x.enable } : x))))
+
+  // The order of the subscriptions: by SortOrder (equal ones as created), the automatic nodes where they were placed.
   const auto = settings.data?.subscription.autoNode
+  const groups = auto?.groups ?? []
   const inbounds = (list.data ?? []).map((r, i) => [r, i] as const).sort((a, b) => a[0].sortOrder - b[0].sortOrder || a[1] - b[1]).map((x) => x[0])
-  const firstAfter = auto ? inbounds.findIndex((r) => r.sortOrder >= auto.position) : -1
-  const autoAt = !auto || auto.last || firstAfter < 0 ? inbounds.length : firstAfter
-  type Row = { id: string; inbound?: Inbound }
+  const placeOf = (n: { last: boolean; position: number }) => {
+    const firstAfter = inbounds.findIndex((r) => r.sortOrder >= n.position)
+    return n.last || firstAfter < 0 ? inbounds.length : firstAfter
+  }
+  type Row = { id: string; inbound?: Inbound; group?: AutoGroup }
   const rowsInOrder: Row[] = inbounds.map((r) => ({ id: r.id, inbound: r }))
-  if (auto?.enable) rowsInOrder.splice(autoAt, 0, { id: AUTO })
+  const autos: Array<{ row: Row; at: number; position: number }> = []
+  if (auto?.enable) autos.push({ row: { id: AUTO }, at: placeOf(auto), position: auto.position })
+  for (const g of groups) autos.push({ row: { id: groupSlot(g.id), group: g }, at: placeOf(g), position: g.position })
+  autos.sort((x, y) => x.at - y.at || x.position - y.position)
+  let added = 0
+  for (const a of autos) rowsInOrder.splice(a.at + added++, 0, a.row)
   const byId = new Map(rowsInOrder.map((r) => [r.id, r]))
   const rows: Row[] = dragged ? dragged.map((id) => byId.get(id)).filter((r): r is Row => !!r) : rowsInOrder
 
@@ -97,7 +131,8 @@ export default function Inbounds() {
 
   return (
     <section>
-      <PageHeader title="Подключения" hint="Новое подключение сразу попадает в подписки всех клиентов, а новые клиенты получают все подключения. Выключатель убирает подключение из подписок у всех сразу. Строки можно перетаскивать: так задаётся порядок нод в подписке, автоузел тоже стоит в этом порядке.">
+      <PageHeader title="Подключения" hint="Новое подключение сразу попадает в подписки всех клиентов, а новые клиенты получают все подключения. Выключатель убирает подключение из подписок у всех сразу. Строки можно перетаскивать: так задаётся порядок нод в подписке, автоузлы тоже стоят в этом порядке. «Автоузел» добавляет ещё один узел со своими названием, флагом и набором подключений: приложение само выбирает среди них самое быстрое.">
+        {inbounds.length > 1 && <Button onClick={() => setEditingGroup('new')}><Icon name="refresh" className="size-4" />Автоузел</Button>}
         <Button variant="primary" onClick={() => setEditing('new')}><Icon name="plus" className="size-4" />Добавить</Button>
       </PageHeader>
 
@@ -120,6 +155,29 @@ export default function Inbounds() {
           if (!delays.current.has(row.id)) delays.current.set(row.id, delays.current.size)
           const delay = { animationDelay: `${Math.min(delays.current.get(row.id) ?? 0, 10) * 30}ms` }
           const r = row.inbound
+          const g = row.group
+          if (g) {
+            const have = g.members.filter((id) => inbounds.some((x) => x.id === id)).length
+            return (
+              <Card className={`ap-row flex flex-wrap items-center gap-x-4 gap-y-2 border-dashed px-[18px] py-3 ${g.enable ? '' : 'opacity-70'}`} style={delay}>
+                {rows.length > 1 && <SortGrip className="-ml-2" />}
+                <span className="grid size-9 shrink-0 place-items-center rounded-[11px] bg-surface-2 text-xl leading-none text-dim">
+                  {g.country ? flagOfCountry(g.country) : <Icon name="refresh" className="size-[18px]" />}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 font-semibold">
+                  <span className="truncate">{g.name}</span>
+                  <Badge>Автоузел</Badge>
+                  {have < 2 && <Badge tone="warn">Меньше двух серверов</Badge>}
+                </div>
+                <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[12px] tabular-nums text-dim" title="Подключений в узле">{have}</span>
+                <div className="flex items-center gap-1">
+                  <Switch checked={g.enable} onChange={() => void toggleGroup(g)} label={g.enable ? 'Выключить' : 'Включить'} />
+                  <IconButton icon="pencil" label="Изменить" onClick={() => setEditingGroup(g)} />
+                  <IconButton icon="trash" label="Удалить" tone="danger" onClick={() => void removeGroup(g)} />
+                </div>
+              </Card>
+            )
+          }
           if (!r) {
             return (
               <Card className="ap-row flex flex-wrap items-center gap-x-4 gap-y-2 border-dashed px-[18px] py-3" style={delay}>
@@ -184,6 +242,19 @@ export default function Inbounds() {
         </Card>
       )}
       {!list.loading && inbounds.length === 0 && <Card className="px-4 py-14 text-center text-dim">Подключений пока нет. Нажмите «Добавить» и выберите шаблон.</Card>}
+
+      {editingGroup && (
+        <AutoGroupForm
+          initial={editingGroup === 'new' ? null : editingGroup}
+          inbounds={inbounds}
+          servers={servers.data ?? []}
+          onClose={() => setEditingGroup(null)}
+          onSave={async (g) => {
+            await saveGroups((gs) => (g.id ? gs.map((x) => (x.id === g.id ? g : x)) : [...gs, g]))
+            setEditingGroup(null)
+          }}
+        />
+      )}
 
       {editing && (
         <InboundForm

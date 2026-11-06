@@ -2,6 +2,7 @@ package formats
 
 import (
 	"fmt"
+	"slices"
 
 	"anypanel2/internal/links"
 )
@@ -15,6 +16,9 @@ type AutoOptions struct {
 	IntervalSec int
 	TimeoutSec  int
 	ToleranceMs int
+	// Members, when not nil, are the ids of the connections this node chooses among; a connection named here takes part even
+	// if it asked to stay out of the main automatic node. Nil = every connection that did not ask to stay out.
+	Members map[string]bool
 }
 
 // autoAt is where the automatic node stands among the endpoints: an index into eps, len(eps) meaning after all of them.
@@ -31,11 +35,57 @@ func autoAt(eps []links.Endpoint, a *AutoOptions) int {
 }
 
 // autoMembers are the endpoints that take part in the automatic node.
-func autoMembers(eps []links.Endpoint) []links.Endpoint {
+func autoMembers(eps []links.Endpoint, a *AutoOptions) []links.Endpoint {
 	var out []links.Endpoint
 	for _, e := range eps {
-		if !e.NoAuto {
+		if a != nil && a.Members != nil {
+			if a.Members[e.ID] {
+				out = append(out, e)
+			}
+		} else if !e.NoAuto {
 			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// autoList is every automatic node of a subscription in the order they are put in the list: the main one first, then the
+// extra ones. Nil entries (the main node off) are dropped.
+func autoList(main *AutoOptions, more []*AutoOptions) []*AutoOptions {
+	var out []*AutoOptions
+	if main != nil {
+		out = append(out, main)
+	}
+	for _, a := range more {
+		if a != nil {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// insertAutos puts the values into base, which starts with offset entries that are not servers: vals[i] goes in front of the
+// server at[i] (the number of servers means the end). Values with the same place go in the order of their positions.
+func insertAutos[T any](base []T, offset int, at, pos []int, vals []T) []T {
+	order := make([]int, len(vals))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(x, y int) int {
+		if at[x] != at[y] {
+			return at[x] - at[y]
+		}
+		return pos[x] - pos[y]
+	})
+	out := make([]T, 0, len(base)+len(vals))
+	next := 0
+	for i := 0; i <= len(base); i++ {
+		for next < len(order) && offset+at[order[next]] <= i {
+			out = append(out, vals[order[next]])
+			next++
+		}
+		if i < len(base) {
+			out = append(out, base[i])
 		}
 	}
 	return out
@@ -46,8 +96,7 @@ const nodeTagPrefix = "node-"
 // autoConfig renders the automatic node for Xray clients: every server is an outbound, an observatory probes
 // them all at once every interval and a balancer sends traffic through the one with the lowest delay among those that answer. When none
 // answers the first server is used, so the connection does not go dark.
-func autoConfig(eps []links.Endpoint, opt JSONOptions) (obj, error) {
-	a := opt.Auto
+func autoConfig(eps []links.Endpoint, opt JSONOptions, a *AutoOptions) (obj, error) {
 	var outbounds []any
 	var firstTag string
 	frag, noises := parse(opt.Fragment), parse(opt.Noises)

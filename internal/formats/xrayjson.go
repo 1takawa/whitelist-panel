@@ -13,14 +13,15 @@ import (
 // JSONOptions control the generated Xray client configs. The string options hold JSON typed in the settings.
 type JSONOptions struct {
 	AlwaysArray bool
-	Mux         string       // JSON object, the outbound "mux"
-	Fragment    string       // JSON object {packets, length, interval}: TCP fragmentation of the TLS handshake
-	Noises      string       // JSON array of UDP noises
-	Rules       string       // JSON array of routing rules put before the built-in ones
-	DNS         string       // JSON object replacing the default dns section
-	Info        []string     // names of info nodes: dummy configs that only carry a name
-	Auto        *AutoOptions // the automatic node entry; nil = none
-	Profile     string       // the app's routing profile (a happ:// or incy:// link, or JSON), written into the configs as rules
+	Mux         string         // JSON object, the outbound "mux"
+	Fragment    string         // JSON object {packets, length, interval}: TCP fragmentation of the TLS handshake
+	Noises      string         // JSON array of UDP noises
+	Rules       string         // JSON array of routing rules put before the built-in ones
+	DNS         string         // JSON object replacing the default dns section
+	Info        []string       // names of info nodes: dummy configs that only carry a name
+	Auto        *AutoOptions   // the automatic node entry; nil = none
+	MoreAuto    []*AutoOptions // more automatic nodes, each over its own connections
+	Profile     string         // the app's routing profile (a happ:// or incy:// link, or JSON), written into the configs as rules
 }
 
 type obj = map[string]any
@@ -85,16 +86,20 @@ func XrayJSON(eps []links.Endpoint, opt JSONOptions) ([]byte, error) {
 		}
 		cfgs = append(cfgs, c)
 	}
-	if opt.Auto != nil {
-		if members := autoMembers(eps); len(members) >= 2 {
-			ac, err := autoConfig(members, opt)
-			if err != nil {
-				return nil, err
-			}
-			at := len(opt.Info) + autoAt(eps, opt.Auto)
-			cfgs = append(cfgs[:at], append([]any{ac}, cfgs[at:]...)...)
+	var autos []any
+	var at, pos []int
+	for _, a := range autoList(opt.Auto, opt.MoreAuto) {
+		members := autoMembers(eps, a)
+		if len(members) < 2 {
+			continue
 		}
+		ac, err := autoConfig(members, opt, a)
+		if err != nil {
+			return nil, err
+		}
+		autos, at, pos = append(autos, ac), append(at, autoAt(eps, a)), append(pos, a.Position)
 	}
+	cfgs = insertAutos(cfgs, len(opt.Info), at, pos, autos)
 	if len(cfgs) == 0 {
 		cfgs = append(cfgs, dummyConfig("No servers available"))
 	}

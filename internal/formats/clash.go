@@ -14,10 +14,11 @@ import (
 
 // ClashOptions control the generated Clash profile.
 type ClashOptions struct {
-	Rules     []string     // custom rules, already validated by ParseClashRules
-	RemoteDNS bool         // add a dns section with DoH resolvers
-	Info      []string     // names of info nodes: dummy servers that only carry a name
-	Auto      *AutoOptions // the automatic node group; nil keeps the plain latency group
+	Rules     []string       // custom rules, already validated by ParseClashRules
+	RemoteDNS bool           // add a dns section with DoH resolvers
+	Info      []string       // names of info nodes: dummy servers that only carry a name
+	Auto      *AutoOptions   // the automatic node group; nil keeps the plain latency group
+	MoreAuto  []*AutoOptions // more automatic node groups, each over its own connections
 }
 
 const (
@@ -139,8 +140,17 @@ func Clash(eps []links.Endpoint, opt ClashOptions) ([]byte, error) {
 		groupName = opt.Auto.Name
 		used[groupName] = true
 	}
+	var more []*AutoOptions // the other automatic nodes, each with a name of its own
+	for _, a := range opt.MoreAuto {
+		if a != nil {
+			c := *a
+			c.Name = unique(c.Name)
+			more = append(more, &c)
+		}
+	}
 	var proxies []clashProxy
-	var names, autoNames []string
+	var names []string
+	byID := map[string]string{} // connection id -> its proxy name
 	for _, n := range opt.Info {
 		p := clashProxy{Name: unique(n), Type: "socks5", Server: "127.0.0.1", Port: 1080}
 		proxies, names = append(proxies, p), append(names, p.Name)
@@ -152,28 +162,40 @@ func Clash(eps []links.Endpoint, opt ClashOptions) ([]byte, error) {
 		}
 		p.Name = unique(e.Name)
 		proxies, names = append(proxies, p), append(names, p.Name)
-		if !e.NoAuto {
-			autoNames = append(autoNames, p.Name)
-		}
+		byID[e.ID] = p.Name
 	}
 	if len(proxies) == 0 {
 		p := clashProxy{Name: unique("No servers available"), Type: "socks5", Server: "127.0.0.1", Port: 1080}
 		proxies, names = append(proxies, p), append(names, p.Name)
 	}
+	// membersOf are the proxy names an automatic node chooses among.
+	membersOf := func(a *AutoOptions) []string {
+		var out []string
+		for _, e := range autoMembers(eps, a) {
+			out = append(out, byID[e.ID])
+		}
+		return out
+	}
 
 	// The group the app picks from: every server, probed every 5 minutes, unless the automatic node is configured.
 	group := clashGroup{Name: groupName, Type: "url-test", Proxies: names, URL: probeURL, Interval: 300, Tolerance: 50}
-	at := 0 // where the group stands among the choices (after the info entries)
-	if a := opt.Auto; a != nil && len(autoNames) >= 2 {
-		lazy := false
-		group.Proxies, group.URL, group.Interval, group.Tolerance = autoNames, a.URL, a.IntervalSec, a.ToleranceMs
-		group.Timeout, group.Lazy = a.TimeoutSec*1000, &lazy
-		at = len(opt.Info) + autoAt(eps, a)
+	groups := []clashGroup{group}
+	at, pos, choose := []int{0}, []int{0}, []string{group.Name} // where each group stands among the choices (after the info entries)
+	if a := opt.Auto; a != nil && len(membersOf(a)) >= 2 {
+		groups[0] = autoGroupOf(group.Name, membersOf(a), a)
+		at[0], pos[0] = len(opt.Info)+autoAt(eps, a), a.Position
 	}
-	choices := append(append(append([]string{}, names[:at]...), group.Name), append(append([]string{}, names[at:]...), "DIRECT")...)
+	for _, a := range more {
+		if m := membersOf(a); len(m) >= 2 {
+			groups = append(groups, autoGroupOf(a.Name, m, a))
+			at, pos, choose = append(at, len(opt.Info)+autoAt(eps, a)), append(pos, a.Position), append(choose, a.Name)
+		}
+	}
+	// The plain group (no automatic node) stands first; the configured ones go to their places among the servers.
+	choices := insertAutos(append(append([]string{}, names...), "DIRECT"), 0, at, pos, choose)
 	cfg := clashConfig{
 		MixedPort: 7890, Mode: "rule", LogLevel: "info", Proxies: proxies,
-		ProxyGroups: []clashGroup{{Name: proxyGroup, Type: "select", Proxies: choices}, group},
+		ProxyGroups: append([]clashGroup{{Name: proxyGroup, Type: "select", Proxies: choices}}, groups...),
 	}
 	cfg.Rules = append(cfg.Rules, opt.Rules...)
 	cfg.Rules = append(cfg.Rules, "GEOIP,PRIVATE,DIRECT,no-resolve", "MATCH,"+proxyGroup)
@@ -183,6 +205,13 @@ func Clash(eps []links.Endpoint, opt ClashOptions) ([]byte, error) {
 			Nameserver:        []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}}
 	}
 	return yaml.Marshal(cfg)
+}
+
+// autoGroupOf is an automatic node as a Clash url-test group.
+func autoGroupOf(name string, members []string, a *AutoOptions) clashGroup {
+	lazy := false
+	return clashGroup{Name: name, Type: "url-test", Proxies: members, URL: a.URL, Interval: a.IntervalSec, Tolerance: a.ToleranceMs,
+		Timeout: a.TimeoutSec * 1000, Lazy: &lazy}
 }
 
 func clashProxyFor(e links.Endpoint) (clashProxy, error) {

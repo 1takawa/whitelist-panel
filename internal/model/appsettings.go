@@ -175,6 +175,27 @@ type AutoNodeSettings struct {
 	IntervalSec int    `json:"intervalSec" bson:"intervalSec"` // how often every server is probed
 	TimeoutSec  int    `json:"timeoutSec" bson:"timeoutSec"`   // a probe that takes longer counts as a failure
 	ToleranceMs int    `json:"toleranceMs" bson:"toleranceMs"` // the chosen server is replaced only by one this much faster (Clash)
+
+	// Groups are more automatic nodes, each over its own list of connections (for example only the Russian ones). They use
+	// the check settings above; the node above stays the one over every connection that did not ask to stay out.
+	Groups []AutoGroup `json:"groups" bson:"groups"`
+}
+
+// AutoGroup is one more automatic node: its own name and flag, and the connections it chooses among.
+type AutoGroup struct {
+	ID      string   `json:"id" bson:"id"`
+	Name    string   `json:"name" bson:"name"`
+	Country string   `json:"country" bson:"country"` // two-letter code of the flag shown before the name
+	Enable  bool     `json:"enable" bson:"enable"`
+	Members []string `json:"members" bson:"members"` // ids of the connections
+	Last    bool     `json:"last" bson:"last"`
+	// Position works as in AutoNodeSettings.
+	Position int `json:"position" bson:"position"`
+}
+
+// DisplayName is the name of the node in the apps: the flag, then the name.
+func (g AutoGroup) DisplayName() string {
+	return strings.TrimSpace(FlagEmoji(g.Country) + " " + g.Name)
 }
 
 const (

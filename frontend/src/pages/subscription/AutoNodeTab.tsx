@@ -15,6 +15,9 @@ export default function AutoNodeTab({ value: a, onChange, jsonEnabled, clashEnab
       <Input type="number" min={min} max={max} value={a[key]} onChange={(e) => onChange({ [key]: Number(e.target.value) || 0 } as Partial<AutoNodeSettings>)} />
     </Field>
   )
+  // The check settings are shared with the extra automatic nodes (the Connections page), so they stay while any of them exists.
+  const groups = (a.groups ?? []).length
+  const on = a.enable || groups > 0
   return (
     <div className="grid gap-5">
       <Card className="grid gap-4 p-5">
@@ -24,7 +27,11 @@ export default function AutoNodeTab({ value: a, onChange, jsonEnabled, clashEnab
           Выбирает именно приложение: только оно знает, что быстрее оттуда, где находится клиент.
         </p>
         <Toggle label="Добавлять автоузел в подписку" checked={a.enable} onChange={(v) => onChange({ enable: v })} />
-        {a.enable && (
+        <p className="text-xs text-dim">
+          Этот автоузел собирает все серверы клиента. Узлов можно сделать несколько, каждому со своим названием, флагом и набором серверов (например, только российские): кнопка «Автоузел» на странице «Подключения».
+          {groups > 0 && ` Сейчас дополнительных узлов: ${groups}. Проверка серверов у всех узлов общая, ниже.`}
+        </p>
+        {on && (
           <>
             <Toggle label="Не переключать Happ и INCY на JSON (автоузла у них тогда не будет)" checked={a.keepLinks} onChange={(v) => onChange({ keepLinks: v })} />
             {a.keepLinks ? (
@@ -42,8 +49,9 @@ export default function AutoNodeTab({ value: a, onChange, jsonEnabled, clashEnab
         )}
       </Card>
 
-      {a.enable && (
+      {on && (
         <>
+          {a.enable && (
           <Card className="grid gap-4 p-5">
             <h2 className="text-sm font-semibold">Запись в подписке</h2>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -57,6 +65,7 @@ export default function AutoNodeTab({ value: a, onChange, jsonEnabled, clashEnab
               Если подходящих серверов меньше двух, запись не добавляется.
             </p>
           </Card>
+          )}
 
           <Card className="grid gap-4 p-5">
             <h2 className="text-sm font-semibold">Скорость переключения</h2>

@@ -790,5 +790,63 @@ func normalizeAutoNode(a *model.AutoNodeSettings) error {
 	if a.ToleranceMs < 0 || a.ToleranceMs > 5000 {
 		return invalid("automatic node tolerance must be 0–5000 ms")
 	}
+	return normalizeAutoGroups(a)
+}
+
+const (
+	maxAutoGroups       = 10
+	maxAutoGroupMembers = 100
+)
+
+// normalizeAutoGroups validates the extra automatic nodes: a name, a flag and the connections each one chooses among.
+func normalizeAutoGroups(a *model.AutoNodeSettings) error {
+	if len(a.Groups) > maxAutoGroups {
+		return invalid("too many automatic nodes (max %d)", maxAutoGroups)
+	}
+	if a.Groups == nil {
+		a.Groups = []model.AutoGroup{}
+	}
+	ids := map[string]bool{}
+	for i := range a.Groups {
+		g := &a.Groups[i]
+		g.Name = strings.TrimSpace(g.Name)
+		if g.Name == "" {
+			g.Name = "Авто"
+		}
+		if len([]rune(g.Name)) > 60 {
+			return invalid("automatic node name is too long (max 60 characters)")
+		}
+		if strings.ContainsAny(g.Name, "\r\n") {
+			return invalid("automatic node name must be a single line")
+		}
+		g.Country = strings.ToUpper(strings.TrimSpace(g.Country))
+		if g.Country != "" && (!countryRe.MatchString(g.Country) || model.FlagEmoji(g.Country) == "") {
+			return invalid("automatic node country must be a two-letter code such as RU")
+		}
+		if g.ID == "" {
+			g.ID = newID()
+			g.Last = true // a new node goes to the end of the list
+		}
+		if ids[g.ID] {
+			return invalid("automatic node id %q is used twice", g.ID)
+		}
+		ids[g.ID] = true
+		if len(g.Members) > maxAutoGroupMembers {
+			return invalid("too many connections in the automatic node %q (max %d)", g.Name, maxAutoGroupMembers)
+		}
+		seen := map[string]bool{}
+		members := make([]string, 0, len(g.Members))
+		for _, m := range g.Members {
+			m = strings.TrimSpace(m)
+			if m != "" && !seen[m] {
+				seen[m] = true
+				members = append(members, m)
+			}
+		}
+		g.Members = members
+		if g.Position < 0 {
+			g.Position = 0
+		}
+	}
 	return nil
 }

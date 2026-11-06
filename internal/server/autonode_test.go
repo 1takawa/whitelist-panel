@@ -51,3 +51,20 @@ func TestRoutingProfileGoesIntoJSONOnlyForTheAppItIsFor(t *testing.T) {
 		t.Fatalf("routing switched off: %q", got)
 	}
 }
+
+func TestHappGetsJSONForAnAutoNodeGroupWithTwoServers(t *testing.T) {
+	eps := []links.Endpoint{{ID: "a"}, {ID: "b"}, {ID: "c", NoAuto: true}}
+	set := model.SubSettings{AutoNode: model.AutoNodeSettings{Groups: []model.AutoGroup{{ID: "g", Enable: true, Members: []string{"a", "c"}}}}}
+	if !wantsAutoNodeJSON(set, "Happ/2.1.0", eps) {
+		t.Error("a group of two servers the subscriber has needs the group format, whatever the main node does")
+	}
+	set.AutoNode.Groups[0].Members = []string{"a", "zzz"}
+	if wantsAutoNodeJSON(set, "Happ/2.1.0", eps) {
+		t.Error("only one member is there: no group")
+	}
+	set.AutoNode.Groups[0].Members = []string{"a", "b"}
+	set.AutoNode.Groups[0].Enable = false
+	if wantsAutoNodeJSON(set, "Happ/2.1.0", eps) {
+		t.Error("a group that is off changes nothing")
+	}
+}

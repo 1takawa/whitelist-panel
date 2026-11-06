@@ -89,16 +89,28 @@ func (s *Service) PreviewApp(ctx context.Context, subs model.SubSettings, state 
 		}
 		rows = append(rows, PreviewServer{Name: name, Protocol: in.Protocol, Network: in.Network, Security: rc.Security, Country: ps.Country})
 	}
-	if a := subs.AutoNode; a.Enable && len(rows) >= 2 {
-		auto := PreviewServer{Name: strings.TrimSpace(a.Name), Protocol: "auto"}
-		if auto.Name == "" {
-			auto.Name = model.DefaultAutoNodeName
+	if a := subs.AutoNode; len(rows) >= 2 {
+		var front, back []PreviewServer
+		put := func(p PreviewServer, last bool) {
+			if last {
+				back = append(back, p)
+			} else {
+				front = append(front, p)
+			}
 		}
-		if a.Last {
-			rows = append(rows, auto)
-		} else {
-			rows = append([]PreviewServer{auto}, rows...)
+		if a.Enable {
+			auto := PreviewServer{Name: strings.TrimSpace(a.Name), Protocol: "auto"}
+			if auto.Name == "" {
+				auto.Name = model.DefaultAutoNodeName
+			}
+			put(auto, a.Last)
 		}
+		for _, g := range a.Groups {
+			if g.Enable && len(g.Members) >= 2 {
+				put(PreviewServer{Name: g.Name, Protocol: "auto", Country: g.Country}, g.Last)
+			}
+		}
+		rows = append(append(front, rows...), back...)
 	}
 	info, only := infoNode(subs, eff, true, now)
 	if only {

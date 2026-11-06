@@ -210,3 +210,70 @@ func TestDraggedOrderSetsTheSubscriptionOrderAndTheAutoNodePlace(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoNodeGroupsAreValidatedAndOrdered(t *testing.T) {
+	svc, _, _ := newService(t)
+	ctx := context.Background()
+	set, _ := svc.GetSettings(ctx)
+	set.PanelDomain = "panel.example.com"
+	var ids []string
+	for i, remark := range []string{"one", "two", "three"} {
+		in := wsInbound(10101 + i)
+		in.Remark = remark
+		v, err := svc.CreateInbound(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, v.ID)
+	}
+	bad := func(g model.AutoGroup, why string) {
+		t.Helper()
+		s := *set
+		s.Subscription.AutoNode.Groups = []model.AutoGroup{g}
+		if _, err := svc.PutSettings(ctx, s); err == nil {
+			t.Errorf("%s must be refused", why)
+		}
+	}
+	bad(model.AutoGroup{Name: "x", Country: "RUS"}, "a flag that is not a two-letter code")
+	bad(model.AutoGroup{Name: "a\nb"}, "a name on two lines")
+	bad(model.AutoGroup{Name: strings.Repeat("я", 61)}, "a long name")
+	s := *set
+	s.Subscription.AutoNode.Groups = make([]model.AutoGroup, 11)
+	if _, err := svc.PutSettings(ctx, s); err == nil {
+		t.Error("more than ten groups must be refused")
+	}
+
+	s = *set
+	s.Subscription.AutoNode.Groups = []model.AutoGroup{{Name: "  Авто РУ ", Country: "ru", Enable: true, Members: []string{ids[0], ids[2], ids[0], " "}}, {Name: "", Enable: true}}
+	saved, err := svc.PutSettings(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs := saved.Subscription.AutoNode.Groups
+	if len(gs) != 2 || gs[0].ID == "" || gs[0].ID == gs[1].ID || gs[0].Name != "Авто РУ" || gs[0].Country != "RU" || len(gs[0].Members) != 2 || gs[1].Name == "" || !gs[0].Last {
+		t.Fatalf("%+v", gs)
+	}
+	if gs[0].DisplayName() != "🇷🇺 Авто РУ" {
+		t.Fatalf("flag then name: %q", gs[0].DisplayName())
+	}
+
+	g0, g1 := AutoNodeSlot+":"+gs[0].ID, AutoNodeSlot+":"+gs[1].ID
+	if err := svc.ReorderInbounds(ctx, []string{ids[0], g1, ids[1], g0, ids[2]}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := svc.GetSettings(ctx)
+	a, b := got.Subscription.AutoNode.Groups[0], got.Subscription.AutoNode.Groups[1]
+	if a.Position != 3 || a.Last || b.Position != 1 || b.Last {
+		t.Fatalf("the groups take the places they were dragged to: %+v %+v", a, b)
+	}
+	if err := svc.ReorderInbounds(ctx, []string{g1, ids[0], ids[1], ids[2], g0}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = svc.GetSettings(ctx)
+	if a, b := got.Subscription.AutoNode.Groups[0], got.Subscription.AutoNode.Groups[1]; !a.Last || b.Last || b.Position != 0 {
+		t.Fatalf("%+v %+v", a, b)
+	}
+	if err := svc.ReorderInbounds(ctx, []string{AutoNodeSlot + ":nope", ids[0], ids[1], ids[2]}); err == nil {
+		t.Error("an unknown group must be refused")
+	}
+}
