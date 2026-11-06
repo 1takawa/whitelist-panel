@@ -841,6 +841,29 @@ func normalizePage(p *model.PageSettings) error {
 			return invalid("the page %q does not work: %v", t.Name, err)
 		}
 	}
+	if p.Presets == nil {
+		p.Presets = map[string]map[string]string{}
+	}
+	for id, vals := range p.Presets {
+		pr, ok := subpage.FindPreset(id)
+		if !ok {
+			delete(p.Presets, id) // a page this release does not have
+			continue
+		}
+		for k, v := range vals {
+			n, err := pr.NormalizeField(k, v)
+			if err != nil {
+				return invalid("%s, %s: %v", pr.Name, k, err)
+			}
+			vals[k] = n
+		}
+	}
+	if id, ok := strings.CutPrefix(p.Selected, subpage.PresetPrefix); ok {
+		if _, found := subpage.FindPreset(id); !found {
+			return invalid("the selected built-in page does not exist")
+		}
+		return nil
+	}
 	if p.Selected != "" {
 		t := p.Theme(p.Selected)
 		if t == nil {

@@ -288,8 +288,10 @@ type SubSettings struct {
 // PageSettings hold the pages of the administrator's own design, as saved themes. The theme that is selected is shown to
 // a browser instead of the standard page; the apps get the subscription itself as before.
 type PageSettings struct {
-	Selected string      `json:"selected" bson:"selected"` // id of a theme; "" = the standard page
+	Selected string      `json:"selected" bson:"selected"` // id of a theme, "preset:" + id of a built-in page; "" = the standard page
 	Themes   []PageTheme `json:"themes" bson:"themes"`
+	// Presets are the values the administrator typed into the fields of the built-in pages: page id -> field -> value.
+	Presets map[string]map[string]string `json:"presets" bson:"presets"`
 
 	// A page saved by releases 0.39 and 0.40, when there was only one: moved into a theme when the settings are loaded.
 	OldEnable bool   `json:"-" bson:"enable,omitempty"`
@@ -328,6 +330,9 @@ func (p *PageSettings) migrate() {
 	p.OldEnable, p.OldHTML, p.OldCSS, p.OldJS = false, "", "", ""
 	if p.Themes == nil {
 		p.Themes = []PageTheme{}
+	}
+	if p.Presets == nil {
+		p.Presets = map[string]map[string]string{}
 	}
 }
 

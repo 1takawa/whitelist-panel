@@ -52,6 +52,8 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/settings/preview", a(s.previewTemplate))
 	mux.HandleFunc("POST /api/settings/preview-app", a(s.previewApp))
 	mux.HandleFunc("GET /api/settings/page-example", a(s.pageExample))
+	mux.HandleFunc("GET /api/settings/page-presets", a(s.pagePresets))
+	mux.HandleFunc("GET /api/theme-assets/{preset}/{file}", s.themeAsset)
 	mux.HandleFunc("POST /api/settings/page-preview", a(s.pagePreviewCreate))
 	// The frame that shows the preview is sandboxed, so the browser does not send the session cookie with its request: the
 	// address itself, a random id that lives ten minutes, is what lets it in.

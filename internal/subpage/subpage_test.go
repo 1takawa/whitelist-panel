@@ -86,3 +86,74 @@ func TestDataFields(t *testing.T) {
 		t.Fatal("a broken template must be refused")
 	}
 }
+
+func TestHiddenPoolPresetRendersWithItsFields(t *testing.T) {
+	pr, ok := FindPreset("hidden-pool")
+	if !ok || pr.Tag != "Спонсор" || len(pr.Fields) != 3 {
+		t.Fatalf("%+v", pr)
+	}
+	vals := pr.Values(nil)
+	if vals["telegram"] != "https://t.me/HiddenPoolVPNBot" || vals["support"] != "https://t.me/HiddenPool_supp" || vals["site"] != "" {
+		t.Fatalf("the preset starts with its own values: %v", vals)
+	}
+	out, err := Render(pr.Page(), SampleWith(vals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{"demo@example.com", "https://t.me/HiddenPoolVPNBot", "https://t.me/HiddenPool_supp", "happ://add/https://sub.example.com/sub/demo", "/api/theme-assets/hidden-pool/banner.jpg", "Доступ <em>открыт</em>"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if strings.Contains(s, ">Сайт<") {
+		t.Error("an empty site field hides the link")
+	}
+	// A saved value wins, an empty saved value hides the link, and a value never saved falls back to the preset's.
+	vals = pr.Values(map[string]string{"site": "https://example.org", "telegram": ""})
+	out, _ = Render(pr.Page(), SampleWith(vals))
+	s = string(out)
+	if !strings.Contains(s, `href="https://example.org"`) || strings.Contains(s, ">Telegram<") || !strings.Contains(s, "HiddenPool_supp") {
+		t.Fatalf("%s", s)
+	}
+	// With no support field the support link of the subscription settings is used.
+	vals["support"] = ""
+	out, _ = Render(pr.Page(), SampleWith(vals))
+	if !strings.Contains(string(out), `href="https://t.me/example"`) {
+		t.Fatal("the support address of the settings is the fallback")
+	}
+}
+
+func TestPresetFieldsAreNormalized(t *testing.T) {
+	pr, _ := FindPreset("hidden-pool")
+	for in, want := range map[string]string{"@name": "https://t.me/name", " https://t.me/x ": "https://t.me/x", "example.com/a": "https://example.com/a", "": ""} {
+		if got, err := pr.NormalizeField("telegram", in); err != nil || got != want {
+			t.Errorf("%q -> %q, %v", in, got, err)
+		}
+	}
+	if got, _ := pr.NormalizeField("site", "@name"); got == "https://t.me/name" {
+		t.Error("a site is not a Telegram name")
+	}
+	for _, bad := range []string{"javascript:alert(1)", "ftp://x.example", "a b", "http://localhost", strings.Repeat("a", 301) + ".com"} {
+		if _, err := pr.NormalizeField("support", bad); err == nil {
+			t.Errorf("%q must be refused", bad)
+		}
+	}
+	if _, err := pr.NormalizeField("nope", "https://a.example"); err == nil {
+		t.Error("an unknown field is refused")
+	}
+}
+
+func TestPresetAssetsAreServedOnlyForRegisteredFiles(t *testing.T) {
+	if b, ct, ok := Asset("hidden-pool", "banner.jpg"); !ok || ct != "image/jpeg" || len(b) < 1000 {
+		t.Fatal("the banner is part of the program")
+	}
+	if _, ct, ok := Asset("hidden-pool", "mark.png"); !ok || ct != "image/png" {
+		t.Fatal("the mark")
+	}
+	for _, c := range [][2]string{{"hidden-pool", "page.html"}, {"hidden-pool", "../presets.go"}, {"hidden-pool", "a/b.png"}, {"nope", "mark.png"}, {"hidden-pool", "nothing.png"}} {
+		if _, _, ok := Asset(c[0], c[1]); ok {
+			t.Errorf("%v must not be served", c)
+		}
+	}
+}

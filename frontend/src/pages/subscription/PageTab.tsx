@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../../api'
 import { ask } from '../../components/confirm'
-import { Alert, Button, Card, Field, Input, Modal, Segmented, Select, Textarea } from '../../components/ui'
-import type { PageSettings, PageTheme } from '../../types'
+import { Icon } from '../../components/Icon'
+import { Alert, Badge, Button, Card, Field, Input, Modal, Segmented, Textarea } from '../../components/ui'
+import { useLoad } from '../../hooks'
+import type { PagePreset, PageSettings, PageTheme } from '../../types'
 
 // What a page can use. `{{.name}}` puts the value in, escaped for the place it stands in (text, an attribute, a script).
 const fields: Array<[string, string]> = [
@@ -37,11 +39,91 @@ const holders: Record<File, string> = {
 const DEFAULT = ''
 const newId = () => `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
-// The subscriber's page: the standard one, or one of the saved themes written by the administrator. A theme is an HTML
-// document with {{…}} places for the subscription's values, its styles and its script.
+const PRESET = 'preset:'
+
+type Option = { id: string; name: string; note?: string; tag?: string; icon: ReactNode }
+
+// The list of pages as a drop-down: a picture, the name and, for a page from a sponsor, a tag. A native <select> cannot show
+// that. It works from the keyboard: arrows move, Enter takes, Esc closes.
+function PageSelect({ options, value, onChange }: { options: Option[]; value: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [at, setAt] = useState(0)
+  const box = useRef<HTMLDivElement>(null)
+  const current = options.find((o) => o.id === value) ?? options[0]
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: PointerEvent) => {
+      if (e.target instanceof Node && !box.current?.contains(e.target)) setOpen(false)
+    }
+    addEventListener('pointerdown', close)
+    return () => removeEventListener('pointerdown', close)
+  }, [open])
+
+  function show() {
+    setAt(Math.max(0, options.findIndex((o) => o.id === value)))
+    setOpen(true)
+  }
+  function pick(id: string) {
+    onChange(id)
+    setOpen(false)
+  }
+  function onKey(e: React.KeyboardEvent) {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        show()
+      }
+      return
+    }
+    if (e.key === 'Escape') setOpen(false)
+    else if (e.key === 'ArrowDown') setAt((i) => (i + 1) % options.length)
+    else if (e.key === 'ArrowUp') setAt((i) => (i - 1 + options.length) % options.length)
+    else if (e.key === 'Enter' || e.key === ' ') pick(options[at].id)
+    else return
+    e.preventDefault()
+  }
+
+  const row = (o: Option) => (
+    <>
+      <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-[10px] bg-surface-2 text-dim">{o.icon}</span>
+      <span className="min-w-0 flex-1 truncate text-left font-medium">{o.name}{o.note && <span className="ml-2 font-normal text-faint">{o.note}</span>}</span>
+      {o.tag && <Badge>{o.tag}</Badge>}
+    </>
+  )
+
+  return (
+    <div ref={box} className="relative" onKeyDown={onKey}>
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => (open ? setOpen(false) : show())} className="flex min-h-12 w-full items-center gap-3 rounded-[10px] border border-line-strong bg-surface px-3 py-1.5 text-sm hover:border-ink/30">
+        {row(current)}
+        <Icon name="down" className={`shrink-0 text-dim transition-transform duration-300 ease-[var(--ease)] ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <ul role="listbox" className="ap-enter absolute left-0 right-0 z-30 mt-1.5 grid gap-0.5 overflow-hidden rounded-xl border border-line bg-surface p-1.5 shadow-pop">
+          {options.map((o, i) => (
+            <li key={o.id} role="option" aria-selected={o.id === value}>
+              <button type="button" onClick={() => pick(o.id)} onPointerEnter={() => setAt(i)} className={`flex min-h-12 w-full items-center gap-3 rounded-lg px-2 py-1.5 text-sm ${i === at ? 'bg-surface-2' : ''}`}>
+                {row(o)}
+                {o.id === value && <Icon name="check" className="shrink-0 text-ink" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+const PANEL_ICON = <span className="text-sm font-bold uppercase text-ink">W</span>
+const CODE_ICON = <span className="font-mono text-xs text-dim">{'</>'}</span>
+
+// The subscriber's page: the standard one, a built-in page of the panel (a sponsor's), or one of the saved themes written by
+// the administrator. A theme is an HTML document with {{…}} places for the subscription's values, its styles and its script.
 export default function PageTab({ value: p, onChange }: { value: PageSettings; onChange: (patch: Partial<PageSettings>) => void }) {
   const [dialog, setDialog] = useState<'create' | 'rename' | null>(null)
+  const presets = useLoad<PagePreset[]>('/api/settings/page-presets')
   const theme = p.themes.find((t) => t.id === p.selected)
+  const preset = (presets.data ?? []).find((x) => PRESET + x.id === p.selected)
 
   const setTheme = (patch: Partial<PageTheme>) => onChange({ themes: p.themes.map((t) => (t.id === p.selected ? { ...t, ...patch } : t)) })
 
@@ -57,6 +139,12 @@ export default function PageTab({ value: p, onChange }: { value: PageSettings; o
     onChange({ themes: p.themes.filter((t) => t.id !== theme.id), selected: DEFAULT })
   }
 
+  const options: Option[] = [
+    { id: DEFAULT, name: 'Whitelist Panel', note: 'по умолчанию', icon: PANEL_ICON },
+    ...(presets.data ?? []).map((x) => ({ id: PRESET + x.id, name: x.name, tag: x.tag, icon: <img src={x.icon} alt="" className="size-7 object-contain" /> })),
+    ...p.themes.map((t) => ({ id: t.id, name: t.name, icon: CODE_ICON })),
+  ]
+
   return (
     <div className="grid gap-5">
       <Card className="grid gap-4 p-5">
@@ -65,10 +153,7 @@ export default function PageTab({ value: p, onChange }: { value: PageSettings; o
           <p className="mt-1 text-sm text-dim">Что клиент видит в браузере по своей ссылке. Приложения (Happ, INCY и другие) получают саму подписку, как и раньше.</p>
         </div>
         <Field label="Тема">
-          <Select value={p.selected} onChange={(e) => onChange({ selected: e.target.value })}>
-            <option value={DEFAULT}>Whitelist Panel (по умолчанию)</option>
-            {p.themes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </Select>
+          <PageSelect options={options} value={p.selected} onChange={(id) => onChange({ selected: id })} />
         </Field>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setDialog('create')} disabled={p.themes.length >= 20}>Создать</Button>
@@ -77,6 +162,7 @@ export default function PageTab({ value: p, onChange }: { value: PageSettings; o
         </div>
       </Card>
 
+      {preset && <PresetPanel key={preset.id} preset={preset} saved={p.presets?.[preset.id] ?? {}} onChange={(vals) => onChange({ presets: { ...(p.presets ?? {}), [preset.id]: vals } })} />}
       {theme && <Editor key={theme.id} theme={theme} onChange={setTheme} />}
 
       {dialog && createPortal(
@@ -95,6 +181,62 @@ export default function PageTab({ value: p, onChange }: { value: PageSettings; o
         document.body,
       )}
     </div>
+  )
+}
+
+// A built-in page: only the values it puts in can be changed, and how it looks is shown next to them.
+function PresetPanel({ preset, saved, onChange }: { preset: PagePreset; saved: Record<string, string>; onChange: (vals: Record<string, string>) => void }) {
+  const values: Record<string, string> = {}
+  for (const f of preset.fields) values[f.key] = saved[f.key] ?? f.default
+  const [view, setView] = useState<{ id: string } | { error: string } | null>(null)
+  const seq = useRef(0)
+
+  // The preview follows the typing with a pause; a link that is not valid yet is reported instead of drawn.
+  const key = JSON.stringify(values)
+  useEffect(() => {
+    const mine = ++seq.current
+    const t = setTimeout(async () => {
+      try {
+        const r = await api<{ id: string }>('/api/settings/page-preview', { method: 'POST', body: { preset: preset.id, fields: values } })
+        if (mine === seq.current) setView({ id: r.id })
+      } catch (e) {
+        if (mine === seq.current) setView({ error: e instanceof Error ? e.message : String(e) })
+      }
+    }, 500)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, preset.id])
+
+  return (
+    <>
+      <Card className="grid gap-4 p-5">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">{preset.name}<Badge>{preset.tag}</Badge></h2>
+          <p className="mt-1 text-sm text-dim">Готовая страница. Подставьте свои ссылки: пустое поле убирает ссылку со страницы. Telegram можно ввести как @имя.</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {preset.fields.map((f) => (
+            <Field key={f.key} label={f.label}>
+              <Input value={values[f.key]} placeholder={f.placeholder} spellCheck={false} onChange={(e) => onChange({ ...values, [f.key]: e.target.value })} />
+            </Field>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="grid gap-3 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Предпросмотр</h2>
+          {view && 'id' in view && (
+            <a href={`/api/settings/page-preview/${view.id}`} target="_blank" rel="noopener noreferrer" className="text-xs text-dim underline-offset-4 hover:text-ink hover:underline">Открыть в новой вкладке</a>
+          )}
+        </div>
+        {view === null && <p className="text-sm text-dim">Загружается…</p>}
+        {view && 'error' in view && <Alert>{view.error}</Alert>}
+        {view && 'id' in view && (
+          <iframe title="Предпросмотр страницы" src={`/api/settings/page-preview/${view.id}`} sandbox="allow-scripts allow-popups" className="h-[640px] w-full rounded-lg border border-line bg-white" />
+        )}
+      </Card>
+    </>
   )
 }
 

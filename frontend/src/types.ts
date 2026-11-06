@@ -174,8 +174,18 @@ export type SubSettings = {
 
 // The saved page themes; the selected one is what subscribers see in a browser ("" = the standard page).
 export type PageSettings = {
-  selected: string
+  selected: string // a theme id, "preset:" + a built-in page id, or "" for the standard page
   themes: PageTheme[]
+  presets: Record<string, Record<string, string>> // values typed into the fields of the built-in pages
+}
+
+// A built-in page that comes with the panel (for example the sponsor's).
+export type PagePreset = {
+  id: string
+  name: string
+  tag: string
+  icon: string
+  fields: { key: string; label: string; placeholder: string; default: string }[]
 }
 
 export type PageTheme = {

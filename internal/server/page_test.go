@@ -111,3 +111,65 @@ func TestSubscriptionPageEditorEndpoints(t *testing.T) {
 		t.Fatalf("%d", rec.Code)
 	}
 }
+
+func TestBuiltInPageIsSelectedWithItsFields(t *testing.T) {
+	h := newHandler(t)
+	subID, _ := subFixture(t, h, "")
+	c := loggedIn(t, h)
+	browser := map[string]string{"Accept": "text/html"}
+	put := func(page map[string]any) (int, string) {
+		body, _ := json.Marshal(map[string]any{"panelDomain": "panel.example.com", "subscription": map[string]any{"page": page}})
+		rec := do(h, http.MethodPut, "/api/settings", string(body), c, nil)
+		return rec.Code, rec.Body.String()
+	}
+
+	list := do(h, http.MethodGet, "/api/settings/page-presets", "", c, nil)
+	if list.Code != 200 || !strings.Contains(list.Body.String(), `"name":"Hidden Pool"`) || !strings.Contains(list.Body.String(), `"tag":"Спонсор"`) || !strings.Contains(list.Body.String(), `"key":"telegram"`) {
+		t.Fatalf("%d %s", list.Code, list.Body)
+	}
+	if rec := do(h, http.MethodGet, "/api/settings/page-presets", "", nil, nil); rec.Code != 401 {
+		t.Fatalf("the list is for the administrator: %d", rec.Code)
+	}
+
+	for name, page := range map[string]map[string]any{
+		"unknown page":  {"selected": "preset:nope"},
+		"bad link":      {"selected": "preset:hidden-pool", "presets": map[string]any{"hidden-pool": map[string]any{"site": "javascript:alert(1)"}}},
+		"unknown field": {"selected": "preset:hidden-pool", "presets": map[string]any{"hidden-pool": map[string]any{"nope": "https://a.example"}}},
+	} {
+		if code, _ := put(page); code != 400 {
+			t.Errorf("%s must be refused: %d", name, code)
+		}
+	}
+
+	if code, body := put(map[string]any{"selected": "preset:hidden-pool", "presets": map[string]any{"hidden-pool": map[string]any{"site": "example.org", "support": "@my_support"}}}); code != 200 || !strings.Contains(body, `"site":"https://example.org"`) || !strings.Contains(body, `"support":"https://t.me/my_support"`) {
+		t.Fatalf("the fields are checked and written in full: %d %s", code, body)
+	}
+	rec := do(h, http.MethodGet, "/sub/"+subID, "", nil, browser)
+	got := rec.Body.String()
+	if rec.Code != 200 || !strings.Contains(got, "Hidden Pool") || !strings.Contains(got, `href="https://example.org"`) || !strings.Contains(got, `href="https://t.me/my_support"`) ||
+		!strings.Contains(got, "https://t.me/HiddenPoolVPNBot") || !strings.Contains(rec.Header().Get("Content-Security-Policy"), "sandbox") {
+		t.Fatalf("the built-in page is shown with the typed values and the preset's own for the rest: %d\n%s", rec.Code, got)
+	}
+
+	// The pictures are public, and only the registered ones.
+	if img := do(h, http.MethodGet, "/api/theme-assets/hidden-pool/banner.jpg", "", nil, nil); img.Code != 200 || img.Header().Get("Content-Type") != "image/jpeg" || img.Body.Len() < 1000 {
+		t.Fatalf("%d %s", img.Code, img.Header().Get("Content-Type"))
+	}
+	if img := do(h, http.MethodGet, "/api/theme-assets/hidden-pool/page.html", "", nil, nil); img.Code != 404 {
+		t.Fatalf("%d", img.Code)
+	}
+
+	// The editor previews the built-in page with the fields as they are being typed.
+	b, _ := json.Marshal(map[string]any{"preset": "hidden-pool", "fields": map[string]string{"site": "https://typed.example"}})
+	pv := do(h, http.MethodPost, "/api/settings/page-preview", string(b), c, nil)
+	var id struct{ ID string }
+	_ = json.Unmarshal(pv.Body.Bytes(), &id)
+	view := do(h, http.MethodGet, "/api/settings/page-preview/"+id.ID, "", nil, nil)
+	if pv.Code != 200 || !strings.Contains(view.Body.String(), "https://typed.example") || !strings.Contains(view.Body.String(), "demo@example.com") {
+		t.Fatalf("%d %s", pv.Code, view.Body)
+	}
+	bad, _ := json.Marshal(map[string]any{"preset": "hidden-pool", "fields": map[string]string{"site": "javascript:1"}})
+	if rec := do(h, http.MethodPost, "/api/settings/page-preview", string(bad), c, nil); rec.Code != 400 {
+		t.Fatalf("%d", rec.Code)
+	}
+}

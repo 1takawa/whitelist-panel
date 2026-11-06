@@ -51,6 +51,7 @@ type Input struct {
 	URL, SupportURL, ProfileURL, Announce string
 	Links                                 []Link
 	Now                                   time.Time
+	Fields                                map[string]string // the values of a built-in page's fields; nil for the administrator's own pages
 }
 
 type app struct {
@@ -126,6 +127,11 @@ func Data(in Input) map[string]any {
 		"url": in.URL, "hasUrl": in.URL != "", "supportUrl": in.SupportURL, "profileUrl": in.ProfileURL, "announce": in.Announce,
 		"links": links, "apps": appList, "qrSvg": template.HTML(qrSVG(in.URL)),
 	}
+	fields := map[string]any{}
+	for k, v := range in.Fields {
+		fields[k] = v
+	}
+	d["field"] = fields
 	// The same values for a script: {{.json}} inside <script> is a ready object, e.g. const sub = {{.json}};
 	pub := map[string]any{}
 	for _, k := range []string{"name", "title", "status", "statusLabel", "up", "down", "used", "total", "usedText", "totalText", "percent", "expiryAt", "expiryText", "daysLeft", "url", "supportUrl", "profileUrl", "announce", "links"} {
@@ -231,10 +237,14 @@ func Render(p Page, data map[string]any) ([]byte, error) {
 }
 
 // Sample is a made-up subscription for the preview and for checking a page before it is saved.
-func Sample() map[string]any {
+func Sample() map[string]any { return SampleWith(nil) }
+
+// SampleWith is Sample for a built-in page, with the values of its fields.
+func SampleWith(fields map[string]string) map[string]any {
 	end := time.Now().Add(23 * 24 * time.Hour)
 	return Data(Input{
-		Name: "demo@example.com", Title: "Whitelist", Status: "active", Up: 3 << 30, Down: 9 << 30, Total: 40 << 30, ExpiryAt: &end,
+		Fields: fields,
+		Name:   "demo@example.com", Title: "Whitelist", Status: "active", Up: 3 << 30, Down: 9 << 30, Total: 40 << 30, ExpiryAt: &end,
 		URL: "https://sub.example.com/sub/demo", SupportURL: "https://t.me/example", ProfileURL: "https://example.com",
 		Announce: "Это пример: так выглядит объявление.",
 		Links: []Link{

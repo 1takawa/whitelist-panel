@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -87,19 +88,30 @@ func sendPage(w http.ResponseWriter, body []byte, framed bool) {
 // so the standard page is shown instead).
 func (s *Server) customPage(sb *panel.Subscription) ([]byte, bool) {
 	page := sb.Settings.Subscription.Page
-	p := page.Theme(page.Selected)
-	if page.Selected == "" || p == nil || p.HTML == "" {
-		return nil, false
+	var code subpage.Page
+	var fields map[string]string
+	if id, ok := strings.CutPrefix(page.Selected, subpage.PresetPrefix); ok {
+		pr, found := subpage.FindPreset(id)
+		if !found {
+			return nil, false
+		}
+		code, fields = pr.Page(), pr.Values(page.Presets[id])
+	} else {
+		t := page.Theme(page.Selected)
+		if page.Selected == "" || t == nil || t.HTML == "" {
+			return nil, false
+		}
+		code = subpage.Page{HTML: t.HTML, CSS: t.CSS, JS: t.JS}
 	}
 	in := subpage.Input{
 		Name: sb.Client.Email, Title: sb.Meta.Title, Status: sb.Client.Status(s.now()),
 		Up: sb.Client.Up, Down: sb.Client.Down, Total: sb.Client.TotalBytes, ExpiryAt: sb.Client.ExpiryAt,
-		URL: sb.URL, SupportURL: sb.Meta.SupportURL, ProfileURL: sb.Meta.ProfileURL, Announce: sb.Meta.Announce, Now: s.now(),
+		URL: sb.URL, SupportURL: sb.Meta.SupportURL, ProfileURL: sb.Meta.ProfileURL, Announce: sb.Meta.Announce, Now: s.now(), Fields: fields,
 	}
 	for _, l := range sb.Links {
 		in.Links = append(in.Links, subpage.Link{Remark: l.Remark, Name: l.Name, Protocol: l.Protocol, Network: l.Network, Security: l.Security, Link: l.Link})
 	}
-	out, err := subpage.Render(subpage.Page{HTML: p.HTML, CSS: p.CSS, JS: p.JS}, subpage.Data(in))
+	out, err := subpage.Render(code, subpage.Data(in))
 	if err != nil {
 		s.log.Error("custom subscription page failed", "err", err)
 		return nil, false
@@ -113,17 +125,55 @@ func (s *Server) pageExample(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"html": e.HTML, "css": e.CSS, "js": e.JS})
 }
 
+// pagePresets lists the built-in pages for the settings.
+func (s *Server) pagePresets(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, subpage.Presets())
+}
+
+// themeAsset serves a picture of a built-in page. It is public: the subscriber's browser loads it.
+func (s *Server) themeAsset(w http.ResponseWriter, r *http.Request) {
+	b, ct, ok := subpage.Asset(r.PathValue("preset"), r.PathValue("file"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", ct)
+	h.Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(b)
+}
+
 // pagePreviewCreate checks the code the editor sends, renders it with made-up data and remembers the result.
 func (s *Server) pagePreviewCreate(w http.ResponseWriter, r *http.Request) {
 	req, ok := decode[struct {
-		HTML string `json:"html"`
-		CSS  string `json:"css"`
-		JS   string `json:"js"`
+		HTML   string            `json:"html"`
+		CSS    string            `json:"css"`
+		JS     string            `json:"js"`
+		Preset string            `json:"preset"` // a built-in page instead of the code above
+		Fields map[string]string `json:"fields"`
 	}](w, r)
 	if !ok {
 		return
 	}
-	out, err := subpage.Render(subpage.Page{HTML: req.HTML, CSS: req.CSS, JS: req.JS}, subpage.Sample())
+	code, data := subpage.Page{HTML: req.HTML, CSS: req.CSS, JS: req.JS}, subpage.Sample()
+	if req.Preset != "" {
+		pr, found := subpage.FindPreset(req.Preset)
+		if !found {
+			writeError(w, http.StatusBadRequest, "unknown built-in page")
+			return
+		}
+		vals := map[string]string{}
+		for k, v := range req.Fields {
+			n, err := pr.NormalizeField(k, v)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, k+": "+err.Error())
+				return
+			}
+			vals[k] = n
+		}
+		code, data = pr.Page(), subpage.SampleWith(pr.Values(vals))
+	}
+	out, err := subpage.Render(code, data)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

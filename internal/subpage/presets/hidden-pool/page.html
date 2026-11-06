@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#090a0c">
+<title>Hidden Pool</title>
+</head>
+<body>
+<header class="bar" id="bar">
+  <div class="bar-in">
+    <a class="brand" href="#" aria-label="Hidden Pool"><img src="/api/theme-assets/hidden-pool/mark.png" alt=""><img src="/api/theme-assets/hidden-pool/wordmark.png" alt="Hidden Pool"></a>
+    <nav aria-label="Ссылки">
+      {{with .field.site}}<a href="{{.}}" target="_blank" rel="noopener noreferrer">Сайт</a>{{end}}
+      {{with .field.telegram}}<a class="keep" href="{{.}}" target="_blank" rel="noopener noreferrer">Telegram</a>{{end}}
+      {{with .field.support}}<a class="keep" href="{{.}}" target="_blank" rel="noopener noreferrer">Поддержка</a>{{else}}{{with .supportUrl}}<a class="keep" href="{{.}}" target="_blank" rel="noopener noreferrer">Поддержка</a>{{end}}{{end}}
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero" aria-labelledby="title">
+    <img class="hero-art" src="/api/theme-assets/hidden-pool/banner.jpg" alt="">
+    <div class="hero-shade" aria-hidden="true"></div>
+    <div class="wrap hero-grid">
+      <div class="hero-copy rv">
+        <span class="eyebrow"><i></i>ВАША ПОДПИСКА</span>
+        <h1 id="title">{{if eq .status "active"}}{{if and .hasExpiry (le .daysLeft 7)}}Срок <em>подходит</em>{{else}}Доступ <em>открыт</em>{{end}}{{else if eq .status "expired"}}Доступ <em>закрыт</em>{{else if eq .status "exhausted"}}Трафик <em>закончился</em>{{else}}Подписка <em>отключена</em>{{end}}</h1>
+        <p class="lead">{{if eq .status "active"}}{{if and .hasExpiry (le .daysLeft 7)}}Подписка работает, но скоро закончится. Продлите заранее, чтобы не потерять доступ.{{else}}Одна ссылка работает на всех ваших устройствах. Добавьте её в приложение один раз.{{end}}{{else if eq .status "expired"}}Срок подписки закончился, ссылка больше не открывает серверы. Продлите её, и всё заработает снова.{{else if eq .status "exhausted"}}Лимит трафика использован. Он обновится в начале следующего периода или после продления.{{else}}Подписка отключена. Если это ошибка, напишите в поддержку.{{end}}</p>
+        <div class="who"><span class="pill {{if eq .status "active"}}{{if and .hasExpiry (le .daysLeft 7)}}warn{{else}}ok{{end}}{{else if eq .status "disabled"}}{{else if eq .status "expired"}}bad{{else}}warn{{end}}">{{.statusLabel}}</span><code>{{.name}}</code></div>
+      </div>
+
+      <aside class="card link-card rv{{if ne .status "active"}} is-off{{end}}" aria-label="Ссылка подписки">
+        {{if .hasUrl}}
+        <div class="qr" role="img" aria-label="QR-код подписки">{{.qrSvg}}</div>
+        <div class="cap"><span>QR подписки</span><span>{{if ne .status "active"}}ссылка не работает{{else}}наведите камеру{{end}}</span></div>
+        <div class="copybox">
+          <code>{{.url}}</code>
+          <button class="btn btn-ink" type="button" data-copy="{{.url}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg><span class="lbl">Копировать</span></button>
+        </div>
+        {{end}}
+      </aside>
+    </div>
+  </section>
+
+  <section class="wrap facts rv" aria-label="Состояние подписки">
+    <div class="fact"><small>Трафик</small><b class="num">{{.usedText}} <span>/ {{.totalText}}</span></b>{{if not .unlimited}}<div class="meter{{if ge .percent 90}} bad{{else if ge .percent 70}} warn{{end}}"><i style="width: {{.percent}}%"></i></div><p>Осталось {{.leftText}}</p>{{else}}<p>Без ограничения</p>{{end}}</div>
+    <div class="fact"><small>Действует до</small><b class="num">{{.expiryText}}</b><p>{{if .hasExpiry}}{{if gt .daysLeft 0}}Осталось дней: {{.daysLeft}}{{else}}Срок закончился{{end}}{{else}}Продлевать не нужно{{end}}</p></div>
+  </section>
+
+  {{if .hasUrl}}
+  <section class="wrap section" id="connect">
+    <div class="section-head rv"><div><span class="eyebrow"><i></i>ПОДКЛЮЧЕНИЕ</span><h2>Добавьте в <em>приложение</em></h2></div><p>Выберите своё устройство: покажем, откуда взять приложение.</p></div>
+
+    <div class="tabs rv" role="tablist" aria-label="Устройство" id="tabs">
+      <span class="thumb" aria-hidden="true"></span>
+      <button role="tab" aria-selected="true" data-os="ios">iPhone</button>
+      <button role="tab" aria-selected="false" data-os="android">Android</button>
+      <button role="tab" aria-selected="false" data-os="win">Windows</button>
+      <button role="tab" aria-selected="false" data-os="mac">Mac</button>
+    </div>
+
+    <div class="connect-grid">
+      <div class="rv">
+        <div class="apps">
+          {{range $i, $a := .apps}}
+          <div class="app{{if eq $i 0}} is-main{{end}}">
+            <div><b>{{$a.name}}{{if eq $i 0}} <i>рекомендуем</i>{{end}}</b><span>{{if $a.copyOnly}}{{$a.platforms}}{{else if eq $i 0}}добавится само, одним нажатием{{else}}{{$a.platforms}}{{end}}</span></div>
+            {{if $a.copyOnly}}<button class="btn btn-ghost" type="button" data-copy="{{$.url}}"><span class="lbl">Копировать</span></button>
+            {{else}}<a class="btn {{if eq $i 0}}btn-ink{{else}}btn-ghost{{end}}" href="{{$a.openUrl}}"><span>Добавить</span>{{if eq $i 0}}<span class="bi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg></span>{{end}}</a>{{end}}
+          </div>
+          {{end}}
+        </div>
+      </div>
+
+      <div class="steps rv">
+        <div class="step"><span>01</span><div><h3 id="s1t">Установите приложение</h3><p id="s1p">Откройте App Store и установите Happ. Это бесплатно.</p></div></div>
+        <div class="step"><span>02</span><div><h3>Добавьте подписку</h3><p>Нажмите «Добавить» рядом с Happ или вставьте скопированную ссылку в раздел импорта.</p></div></div>
+        <div class="step"><span>03</span><div><h3>Обновите и подключитесь</h3><p>Обновите список серверов, выберите узел и включите подключение.</p></div></div>
+      </div>
+    </div>
+  </section>
+  {{end}}
+
+  <section class="wrap section" id="nodes">
+    <div class="rv">
+      <button class="nodes-toggle" id="nodesToggle" type="button" aria-expanded="false" aria-controls="nodesPanel"><strong>Ноды <em>· {{len .links}}</em></strong><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="nodes-panel" id="nodesPanel"><div>
+        {{range .links}}<div class="node"><span class="flag">🌐</span><div><b>{{.remark}}</b><small>{{.network}}</small></div><span class="tag proto">{{.protocol}} · {{.security}}</span><button class="icon-btn" type="button" data-copy="{{.link}}" data-toast="Ссылка ноды скопирована" aria-label="Копировать ссылку ноды"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg></button></div>
+        {{else}}<div class="node"><span class="flag">·</span><div><b>Пока нет доступных подключений</b></div></div>{{end}}
+      </div></div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="foot-in">
+    <span>© Hidden Pool</span>
+    <nav>
+      {{with .field.site}}<a href="{{.}}" target="_blank" rel="noopener noreferrer">Сайт</a>{{end}}
+      {{with .field.telegram}}<a href="{{.}}" target="_blank" rel="noopener noreferrer">Telegram</a>{{end}}
+      {{with .field.support}}<a href="{{.}}" target="_blank" rel="noopener noreferrer">Поддержка</a>{{else}}{{with .supportUrl}}<a href="{{.}}" target="_blank" rel="noopener noreferrer">Поддержка</a>{{end}}{{end}}
+    </nav>
+  </div>
+</footer>
+<div class="toast" id="toast" role="status" aria-live="polite">Ссылка скопирована</div>
+</body>
+</html>
