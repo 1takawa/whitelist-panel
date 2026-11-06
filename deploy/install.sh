@@ -24,7 +24,6 @@ ROUTES_DIR="$CONF_DIR/routes"
 STATE_DIR=/var/lib/anypanel
 CADDYFILE=/etc/caddy/Caddyfile
 DECOY_DIR=/var/www/anypanel-decoy
-CRED_FILE=/root/anypanel-credentials.txt
 PANEL_LISTEN=127.0.0.1:28270
 CADDY_TLS_PORT=7443
 XRAY_REALITY_PORT=8443
@@ -35,13 +34,14 @@ PANEL_DOMAIN=""
 REALITY_DOMAIN=""
 ACME_EMAIL=""
 ADMIN_USER=admin
+ADMIN_USER_SET=0
 ADMIN_PASS="${ANYPANEL_ADMIN_PASS:-}"
 SKIP_DNS=0
 SKIP_REALITY=0
 CHECK_ONLY=0
 ASSUME_YES=0
 
-if [[ -t 1 ]]; then C_G=$'\e[32m'; C_Y=$'\e[33m'; C_R=$'\e[31m'; C_B=$'\e[1m'; C_0=$'\e[0m'; else C_G=""; C_Y=""; C_R=""; C_B=""; C_0=""; fi
+if [[ -t 1 ]]; then C_G=$'\e[32m'; C_Y=$'\e[33m'; C_R=$'\e[31m'; C_B=$'\e[1m'; C_C=$'\e[1;36m'; C_V=$'\e[1;33m'; C_P=$'\e[1;32m'; C_0=$'\e[0m'; else C_G=""; C_Y=""; C_R=""; C_B=""; C_C=""; C_V=""; C_P=""; C_0=""; fi
 log()  { printf '%s==>%s %s\n' "$C_G" "$C_0" "$*"; }
 warn() { printf '%s!!%s  %s\n' "$C_Y" "$C_0" "$*" >&2; }
 die()  { printf '%sОшибка:%s %s\n' "$C_R" "$C_0" "$*" >&2; exit 1; }
@@ -61,8 +61,8 @@ Whitelist Panel — установщик
 
 Опции:
   --email EMAIL         e-mail для Let's Encrypt (необязательно)
-  --admin-user NAME     логин администратора (по умолчанию admin)
-  --admin-pass PASS     пароль (от 10 символов); лучше через переменную ANYPANEL_ADMIN_PASS; иначе сгенерируется
+  --admin-user NAME     логин администратора (по умолчанию admin; без ключа в терминале установщик спросит)
+  --admin-pass PASS     пароль (от 10 символов); лучше через переменную ANYPANEL_ADMIN_PASS; без ключа в терминале установщик спросит, Enter — сгенерировать
   --skip-dns-check      не проверять DNS (например, за Cloudflare)
   --check               только проверить требования и выйти
   -y, --yes             не задавать вопросов
@@ -78,7 +78,7 @@ while [[ $# -gt 0 ]]; do
     --panel-domain)   PANEL_DOMAIN="${2:?}"; shift 2 ;;
     --reality-domain) REALITY_DOMAIN="${2:?}"; shift 2 ;;
     --email)          ACME_EMAIL="${2:?}"; shift 2 ;;
-    --admin-user)     ADMIN_USER="${2:?}"; shift 2 ;;
+    --admin-user)     ADMIN_USER="${2:?}"; ADMIN_USER_SET=1; shift 2 ;;
     --admin-pass)     ADMIN_PASS="${2:?}"; shift 2 ;;
     --skip-reality)   SKIP_REALITY=1; REALITY_DOMAIN=""; shift ;;
     --skip-dns-check) SKIP_DNS=1; shift ;;
@@ -133,6 +133,36 @@ ask_domains() {
   fi
   [[ "$ADMIN_USER" =~ ^[A-Za-z0-9_]+$ ]] || die "логин администратора: только буквы, цифры и _"
   [[ -z "$ADMIN_PASS" || ${#ADMIN_PASS} -ge 10 ]] || die "пароль администратора должен быть не короче 10 символов"
+}
+
+# Логин и пароль панели: в терминале без ключей можно выбрать свои, а Enter оставляет admin и пароль, который сгенерирует установщик.
+ask_admin() {
+  [[ -t 0 && -t 1 ]] || return 0
+  local u p p2
+  if [[ "$ADMIN_USER_SET" -eq 0 ]]; then
+    while true; do
+      printf '\n3) Логин панели. Enter — admin.\n   Логин: '
+      read -r u || true
+      u="${u// }"
+      if [[ -z "$u" ]]; then break; fi
+      if [[ "$u" =~ ^[A-Za-z0-9_]+$ ]]; then ADMIN_USER="$u"; break; fi
+      warn "логин: только буквы, цифры и _"
+    done
+  fi
+  if [[ -z "$ADMIN_PASS" ]]; then
+    while true; do
+      printf '\n4) Пароль панели (от 10 символов). Enter — сгенерировать.\n   Пароль: '
+      read -rs p || true
+      printf '\n'
+      if [[ -z "$p" ]]; then break; fi
+      if [[ ${#p} -lt 10 ]]; then warn "пароль должен быть не короче 10 символов"; continue; fi
+      printf '   Повторите пароль: '
+      read -rs p2 || true
+      printf '\n'
+      if [[ "$p" == "$p2" ]]; then ADMIN_PASS="$p"; break; fi
+      warn "пароли не совпали"
+    done
+  fi
 }
 
 ensure_tools() {
@@ -472,25 +502,9 @@ wait_health() {
 }
 
 create_admin() {
-  GENERATED_PASS=0
-  if [[ -z "$ADMIN_PASS" ]]; then ADMIN_PASS="$(openssl rand -base64 18 | tr '+/' 'Aa')"; GENERATED_PASS=1; fi
+  if [[ -z "$ADMIN_PASS" ]]; then ADMIN_PASS="$(openssl rand -base64 18 | tr '+/' 'Aa')"; fi
   log "Администратор: $ADMIN_USER"
   ( load_env; printf '%s' "$ADMIN_PASS" | /usr/local/bin/anypanel init-admin "$ADMIN_USER" )
-  ( umask 077; cat > "$CRED_FILE" <<EOF
-Whitelist Panel
-URL:      https://$PANEL_DOMAIN
-Логин:    $ADMIN_USER
-Пароль:   $ADMIN_PASS
-REALITY:  ${REALITY_DOMAIN:-не ставилась}
-EOF
-  )
-}
-
-confirm_plan() {
-  [[ "$ASSUME_YES" -eq 1 || ! -t 0 ]] && return 0
-  printf '\nБудет установлено:\n  домен панели  : %s\n  нода REALITY  : %s\n  админ         : %s\n\nПродолжить? [y/N] ' "$PANEL_DOMAIN" "${REALITY_DOMAIN:-пропущена (поставите позже в панели)}" "$ADMIN_USER"
-  local a; read -r a
-  [[ "$a" =~ ^[YyДд] ]] || die "отменено"
 }
 
 # Обновление: заменяет только бинарник панели. Конфиги, база, домены и сертификаты не трогаются.
@@ -539,6 +553,7 @@ main() {
   need_root
   check_os
   ask_domains
+  ask_admin
   check_bundle
   ensure_tools
   check_dns
@@ -546,7 +561,6 @@ main() {
   check_not_installed
   if [[ "$CHECK_ONLY" -eq 1 ]]; then log "Проверка пройдена: можно устанавливать (панель $PANEL_DOMAIN, нода: ${REALITY_DOMAIN:-пропущена})"; return 0; fi
 
-  confirm_plan
   apt_prepare
   install_mongo
   install_nginx
@@ -564,27 +578,18 @@ main() {
   systemctl enable --now anypanel.service >/dev/null
   wait_health
   open_firewall
-  NODE_DONE=0
   if [[ -n "$REALITY_DOMAIN" ]]; then
     log "Нода на этом сервере: $REALITY_DOMAIN"
-    create_main_node && NODE_DONE=1 || true
+    create_main_node || true
   fi
 
-  cat <<EOF
-
-${C_G}${C_B}Whitelist Panel установлена.${C_0}
-
-  Панель:  https://$PANEL_DOMAIN
-  Логин:   $ADMIN_USER
-  Пароль:  $( [[ "$GENERATED_PASS" -eq 1 ]] && echo "$ADMIN_PASS  (сгенерирован)" || echo "(заданный вами)" )
-  Данные входа сохранены в $CRED_FILE (chmod 600) — сохраните и удалите файл.
-
-  Сертификаты Caddy выпустит при первом обращении к каждому домену (до минуты).
-  $( if [[ "$NODE_DONE" -eq 1 ]]; then echo "Нода: $REALITY_DOMAIN (уже в подписках клиентов)."; else echo "Ноду на этом сервере можно поставить в панели: «Серверы» -> «Поставить ноду»."; fi )
-
-  Проверка: systemctl status anypanel caddy nginx mongod
-  Логи:     journalctl -u anypanel -f
-EOF
+  local bar="${C_B}==============================================${C_0}"
+  printf '\n%sWhitelist Panel установлена.%s\n\n' "$C_G$C_B" "$C_0"
+  printf '%s\n' "$bar"
+  printf '  Панель:  %s%s%s\n' "$C_C" "https://$PANEL_DOMAIN" "$C_0"
+  printf '  Логин:   %s%s%s\n' "$C_V" "$ADMIN_USER" "$C_0"
+  printf '  Пароль:  %s%s%s\n' "$C_P" "$ADMIN_PASS" "$C_0"
+  printf '%s\n\n' "$bar"
 }
 
 main

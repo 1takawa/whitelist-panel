@@ -37,11 +37,10 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 log "Загружаю $ASSET ($VERSION)"
-curl -fSL --retry 3 -o "$tmp/$ASSET" "$base/$ASSET" \
+curl -fsSL --retry 3 -o "$tmp/$ASSET" "$base/$ASSET" \
   || die "не удалось скачать $base/$ASSET. проверьте интернет и что у репозитория есть релиз"
 if curl -fsSL --retry 3 -o "$tmp/$ASSET.sha256" "$base/$ASSET.sha256"; then
   ( cd "$tmp" && sha256sum -c --quiet "$ASSET.sha256" ) || die "контрольная сумма архива не совпала"
-  log "Контрольная сумма совпала"
 else
   printf '!!  файла контрольной суммы нет: продолжаю без проверки\n' >&2
 fi
