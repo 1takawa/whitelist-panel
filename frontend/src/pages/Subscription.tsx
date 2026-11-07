@@ -137,7 +137,7 @@ export default function Subscription() {
               <Field label="Домен подписки" hint="Если пусто — домен панели. Нужен, когда подписку отдают через другой домен, например за CDN.">
                 <Input value={sub.domain} onChange={(e) => set({ domain: e.target.value })} placeholder={form.panelDomain || 'sub.example.com'} />
               </Field>
-              <SubDomainBlock domain={sub.domain} panelDomain={form.panelDomain} move={sub.moveToDomain ?? false} onMove={(v) => set({ moveToDomain: v })} />
+              <SubDomainBlock domain={sub.domain} panelDomain={form.panelDomain} move={sub.moveToDomain ?? false} onMove={(v) => set({ moveToDomain: v })} providerId={sub.happ.providerId} />
               <Field label="Полный адрес (URI)" hint="Переопределяет домен и путь целиком, например https://edge.example.com/prefix/. Адрес только подставляется в ссылки: маршрутизацию на него настраиваете вы.">
                 <Input value={sub.uri} onChange={(e) => set({ uri: e.target.value })} placeholder="https://" />
               </Field>
@@ -321,7 +321,7 @@ export default function Subscription() {
 
 // What to do with a separate subscription domain: it is connected to the web server when the settings are saved, can be
 // checked, and the Happ users can be moved to it without a new link.
-function SubDomainBlock({ domain, panelDomain, move, onMove }: { domain: string; panelDomain: string; move: boolean; onMove: (v: boolean) => void }) {
+function SubDomainBlock({ domain, panelDomain, move, onMove, providerId }: { domain: string; panelDomain: string; move: boolean; onMove: (v: boolean) => void; providerId: string }) {
   const [res, setRes] = useState<{ ok: boolean; message?: string; problem?: string; addresses: string[] } | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -358,6 +358,11 @@ function SubDomainBlock({ domain, panelDomain, move, onMove }: { domain: string;
           Панель отправляет Happ заголовок new-domain: приложение само заменяет адрес подписки, новой ссылки раздавать не нужно. Включайте, когда проверка прошла: иначе приложения уйдут на домен, который не отвечает.
           Другие приложения (INCY, Clash, v2rayN) остаются на старой ссылке, она работает.
         </p>
+        {move && !(providerId ?? '').trim() && (
+          <Alert tone="warn">
+            Happ принимает такие команды только от провайдера с Provider ID, без него заголовок игнорируется. Получите Provider ID в Happ (раздел для провайдеров на happ.su) и впишите его во вкладке «Happ».
+          </Alert>
+        )}
       </div>
     </div>
   )
