@@ -15,6 +15,15 @@ export function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+// How long ago, in words: «только что», «5 мин назад», «17 ч назад», «3 дн. назад».
+export function agoText(iso: string, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000))
+  if (s < 60) return 'только что'
+  if (s < 3600) return `${Math.floor(s / 60)} мин назад`
+  if (s < 86400) return `${Math.floor(s / 3600)} ч назад`
+  return `${Math.floor(s / 86400)} дн. назад`
+}
+
 export function formatUptime(seconds: number): string {
   const d = Math.floor(seconds / 86400)
   const h = Math.floor((seconds % 86400) / 3600)

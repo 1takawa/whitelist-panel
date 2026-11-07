@@ -485,7 +485,17 @@ func (s *Service) NewRealityKeys() (priv, pub, shortID string, err error) {
 // ---- clients ----
 
 func (s *Service) ListClients(ctx context.Context) ([]model.Client, error) {
-	return s.Store.ListClients(ctx)
+	list, err := s.Store.ListClients(ctx)
+	if err != nil {
+		return nil, err
+	}
+	nodes := s.lastNodes(ctx)
+	for i := range list {
+		if n, ok := nodes[list[i].Email]; ok {
+			list[i].LastNode = &n
+		}
+	}
+	return list, nil
 }
 
 func (s *Service) GetClient(ctx context.Context, id string) (*model.Client, error) {

@@ -187,6 +187,17 @@ type Client struct {
 	// Devices are the devices (HWID) that asked for this subscription. The apps send the HWID in a header when the
 	// provider asks for it (Happ: "always pass the HWID"). Managed through the device endpoints, never by the client form.
 	Devices []Device `json:"devices" bson:"devices,omitempty"`
+
+	// LastNode is the server the client last moved traffic through. It is worked out when the list is read, never stored.
+	LastNode *ClientNode `json:"lastNode,omitempty" bson:"-"`
+}
+
+// ClientNode names the server a client was last seen on.
+type ClientNode struct {
+	ID   string    `json:"id"` // "local" for the main server
+	Name string    `json:"name"`
+	Flag string    `json:"flag"`
+	At   time.Time `json:"at"`
 }
 
 // Device is one device of a subscriber, as it introduced itself in the subscription request.

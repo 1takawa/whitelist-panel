@@ -557,3 +557,33 @@ func TestAClientIsOnlineOnceOnTheServerItWasLastSeenOn(t *testing.T) {
 		t.Fatalf("%d %d", list[0].OnlineClients, d.Clients.OnlineHere)
 	}
 }
+
+func TestClientListSaysWhichServerEachClientWasLastSeenOn(t *testing.T) {
+	ctx := context.Background()
+	e := newServersEnv(t)
+	remote, _ := e.svc.CreateInbound(ctx, nodeInbound(e.srv.ID, 443))
+	for _, name := range []string{"alice", "bob", "never"} {
+		_, _ = e.svc.CreateClient(ctx, model.Client{Email: name, Enable: true, InboundIDs: []string{remote.ID}})
+	}
+	now := *e.now
+	_ = e.svc.Store.AddServerTraffic(ctx, e.srv.ID, map[string]store.Traffic{"alice": {Up: 1}, "bob": {Up: 1}}, now.Add(-3*time.Hour))
+	_ = e.svc.Store.AddServerTraffic(ctx, LocalServerID, map[string]store.Traffic{"alice": {Up: 1}}, now.Add(-2*time.Hour))
+
+	list, err := e.svc.ListClients(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]*model.ClientNode{}
+	for _, c := range list {
+		got[c.Email] = c.LastNode
+	}
+	if got["alice"] == nil || got["alice"].ID != LocalServerID || got["alice"].Name != MainServerName {
+		t.Fatalf("alice moved to the main server later: %+v", got["alice"])
+	}
+	if got["bob"] == nil || got["bob"].ID != e.srv.ID || got["bob"].Name == "" {
+		t.Fatalf("bob was only on the node, however long ago: %+v", got["bob"])
+	}
+	if got["never"] != nil {
+		t.Fatalf("a client that never connected has no node: %+v", got["never"])
+	}
+}

@@ -92,6 +92,7 @@ export type Client = {
   createdAt: string
   lastActiveAt?: string | null
   devices?: Device[]
+  lastNode?: { id: string; name: string; flag: string; at: string } // the server it last moved traffic through
 }
 
 // A device of a subscriber, as it introduced itself (HWID) when its app asked for the subscription.

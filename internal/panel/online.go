@@ -3,6 +3,8 @@ package panel
 import (
 	"context"
 	"time"
+
+	"anypanel2/internal/model"
 )
 
 // onlineOwners says, for every client that is online, the one server it counts for: the server it moved traffic through
@@ -34,4 +36,37 @@ func (s *Service) onlineOwners(ctx context.Context, now time.Time) map[string]st
 		}
 	}
 	return owners
+}
+
+// MainServerName is how the machine the panel runs on is called in lists.
+const MainServerName = "Главный сервер"
+
+// lastNodes says, for every client that ever moved traffic, the server it did so through last (whenever that was).
+func (s *Service) lastNodes(ctx context.Context) map[string]model.ClientNode {
+	names := map[string]model.ClientNode{LocalServerID: {ID: LocalServerID, Name: MainServerName}}
+	ids := []string{LocalServerID}
+	if srvs, err := s.Store.ListServers(ctx); err == nil {
+		for _, sv := range srvs {
+			ids = append(ids, sv.ID)
+			names[sv.ID] = model.ClientNode{ID: sv.ID, Name: sv.Name, Flag: sv.Flag()}
+		}
+	}
+	out := map[string]model.ClientNode{}
+	for _, id := range ids {
+		rows, err := s.Store.ListServerTraffic(ctx, id)
+		if err != nil {
+			continue
+		}
+		for _, r := range rows {
+			if r.LastActiveAt == nil {
+				continue
+			}
+			if cur, ok := out[r.Email]; !ok || r.LastActiveAt.After(cur.At) {
+				n := names[id]
+				n.At = *r.LastActiveAt
+				out[r.Email] = n
+			}
+		}
+	}
+	return out
 }
