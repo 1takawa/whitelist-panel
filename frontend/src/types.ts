@@ -78,6 +78,7 @@ export type Client = {
   id: string
   email: string
   subId: string
+  num?: number // the number of the client in the order they were made
   uuid: string
   password: string
   flow: '' | 'xtls-rprx-vision'

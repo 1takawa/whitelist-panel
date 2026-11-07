@@ -2,6 +2,7 @@ package panel
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"anypanel2/internal/model"
@@ -69,4 +70,53 @@ func (s *Service) lastNodes(ctx context.Context) map[string]model.ClientNode {
 		}
 	}
 	return out
+}
+
+// numberClients lists the clients after giving a number to each one that has none: in the order the clients were made, after
+// the highest number in use. Numbers are never handed out twice, so a deleted client's number stays unused.
+func (s *Service) numberClients(ctx context.Context) ([]model.Client, error) {
+	list, err := s.Store.ListClients(ctx)
+	if err != nil {
+		return nil, err
+	}
+	missing := false
+	for _, c := range list {
+		if c.Num == 0 {
+			missing = true
+			break
+		}
+	}
+	if !missing {
+		return list, nil
+	}
+	s.numMu.Lock()
+	defer s.numMu.Unlock()
+	if list, err = s.Store.ListClients(ctx); err != nil { // read again: another request may have numbered them
+		return nil, err
+	}
+	next := 0
+	var todo []int
+	for i, c := range list {
+		if c.Num > next {
+			next = c.Num
+		}
+		if c.Num == 0 {
+			todo = append(todo, i)
+		}
+	}
+	sort.SliceStable(todo, func(a, b int) bool {
+		x, y := list[todo[a]], list[todo[b]]
+		if !x.CreatedAt.Equal(y.CreatedAt) {
+			return x.CreatedAt.Before(y.CreatedAt)
+		}
+		return x.Email < y.Email
+	})
+	for _, i := range todo {
+		next++
+		list[i].Num = next
+		if err := s.Store.PutClient(ctx, list[i]); err != nil {
+			return nil, err
+		}
+	}
+	return list, nil
 }

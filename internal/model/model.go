@@ -178,6 +178,9 @@ type Client struct {
 	Comment    string     `json:"comment" bson:"comment"`
 	Trial      bool       `json:"trial" bson:"trial"` // a test subscription: only changes which app banner it sees
 	CreatedAt  time.Time  `json:"createdAt" bson:"createdAt"`
+	// Num is the client's own number in the order they were made: 1, 2, 3… It is given once and never reused, so a number
+	// kept in a conversation with a subscriber stays theirs after others are deleted.
+	Num int `json:"num" bson:"num"`
 
 	// LastActiveAt is the last time the client moved traffic (set by the traffic poll); "online" means recent.
 	LastActiveAt *time.Time `json:"lastActiveAt" bson:"lastActiveAt"`

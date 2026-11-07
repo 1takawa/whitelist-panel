@@ -587,3 +587,56 @@ func TestClientListSaysWhichServerEachClientWasLastSeenOn(t *testing.T) {
 		t.Fatalf("a client that never connected has no node: %+v", got["never"])
 	}
 }
+
+func TestClientsGetNumbersInTheOrderTheyWereMadeAndNeverReuseThem(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newService(t)
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	// Clients saved before numbers existed, listed here out of order.
+	for i, name := range []string{"third", "first", "second"} {
+		at := base.Add(time.Duration([]int{3, 1, 2}[i]) * time.Hour)
+		if err := svc.Store.PutClient(ctx, model.Client{ID: "id-" + name, Email: name, SubID: "sub-" + name, UUID: "u-" + name, Enable: true, CreatedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nums := func() map[string]int {
+		list, err := svc.ListClients(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]int{}
+		for _, c := range list {
+			m[c.Email] = c.Num
+		}
+		return m
+	}
+	if got := nums(); got["first"] != 1 || got["second"] != 2 || got["third"] != 3 {
+		t.Fatalf("numbers follow the creation time: %v", got)
+	}
+	if got := nums(); got["first"] != 1 || got["third"] != 3 {
+		t.Fatalf("numbering twice changes nothing: %v", got)
+	}
+
+	// A deleted client's number is not given again, and a new client comes after the highest number.
+	if err := svc.DeleteClient(ctx, "id-second"); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := svc.CreateClient(ctx, model.Client{Email: "fourth", Enable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := nums(); got["fourth"] != 4 || got["third"] != 3 || len(got) != 3 {
+		t.Fatalf("%v", got)
+	}
+
+	// Editing a client keeps its number, whatever the form sends.
+	edited := *fresh
+	edited.Num = 99
+	edited.Comment = "note"
+	if _, err := svc.UpdateClient(ctx, fresh.ID, edited); err != nil {
+		t.Fatal(err)
+	}
+	if got := nums(); got["fourth"] != 4 {
+		t.Fatalf("the number is not for the form to change: %v", got)
+	}
+}

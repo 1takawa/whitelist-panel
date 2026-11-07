@@ -189,7 +189,7 @@ export default function Clients() {
     const used = (c: Client) => c.up + c.down
     const expiry = (c: Client) => (c.expiryAt ? new Date(c.expiryAt).getTime() : Infinity)
     return all
-      .filter((c) => matchesFilter(filter, states.get(c.id)!) && (!q || c.email.toLowerCase().includes(q) || c.comment.toLowerCase().includes(q)))
+      .filter((c) => matchesFilter(filter, states.get(c.id)!) && (!q || c.email.toLowerCase().includes(q) || c.comment.toLowerCase().includes(q) || String(c.num ?? '') === q.replace(/^#/, '')))
       .sort((a, b) => {
         let r = 0
         if (sort.key === 'status') r = states.get(a.id)!.rank - states.get(b.id)!.rank
@@ -314,8 +314,8 @@ export default function Clients() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && (setQuery(''), e.currentTarget.blur())}
-            placeholder="Поиск по имени"
-            aria-label="Поиск по имени"
+            placeholder="Поиск по имени или номеру"
+            aria-label="Поиск по имени или номеру"
             autoComplete="off"
             className="h-[38px] w-full rounded-[10px] border border-line-strong bg-surface pl-10 pr-9 text-sm transition-[border-color,box-shadow] placeholder:text-faint hover:border-faint focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none [&::-webkit-search-cancel-button]:hidden"
           />
@@ -350,7 +350,7 @@ export default function Clients() {
                 <input ref={headBox} type="checkbox" checked={allShown} onChange={toggleAll} aria-label="Выбрать всех показанных" className="size-4 cursor-pointer accent-[var(--accent)]" />
               </th>
               <Th k="name">Имя</Th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-faint max-[1100px]:hidden">ID</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-faint max-[1100px]:hidden">№</th>
               <Th k="status">Статус</Th>
               <th className="px-3 py-3 text-left text-xs font-medium text-faint max-[980px]:hidden">Нода</th>
               <Th k="expiry" className="max-[820px]:hidden">До</Th>
@@ -380,7 +380,7 @@ export default function Clients() {
                     </div>
                   </td>
                   <td className="px-3 py-3 max-[1100px]:hidden">
-                    <button type="button" title="Нажмите, чтобы скопировать ID" onClick={() => void copyText(c.id)} className="rounded-md px-1.5 py-0.5 font-mono text-xs text-faint hover:bg-surface-2 hover:text-ink">{c.id.slice(0, 6)}</button>
+                    <span title="Порядковый номер: по порядку создания, не меняется" className="px-1.5 font-mono text-xs tabular-nums text-faint">{c.num || '—'}</span>
                   </td>
                   <td className="px-3 py-3"><StatusChip tone={s.online ? 'ok' : s.tone} live={s.online}>{s.online ? 'Онлайн' : s.label}</StatusChip></td>
                   <td className="px-3 py-3 max-[980px]:hidden">

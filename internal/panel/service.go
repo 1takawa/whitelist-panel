@@ -50,6 +50,7 @@ type Service struct {
 	Reserved []int // ports the panel itself uses
 	Now      func() time.Time
 	Log      *slog.Logger
+	numMu    sync.Mutex // numbering of clients
 	devMu    sync.Mutex // serialises changes of a client's device list (subscription requests come in parallel)
 
 	// Optional parts, wired by the caller.
@@ -485,7 +486,7 @@ func (s *Service) NewRealityKeys() (priv, pub, shortID string, err error) {
 // ---- clients ----
 
 func (s *Service) ListClients(ctx context.Context) ([]model.Client, error) {
-	list, err := s.Store.ListClients(ctx)
+	list, err := s.numberClients(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -565,7 +566,7 @@ func (s *Service) UpdateClient(ctx context.Context, id string, c model.Client) (
 	if c.SubID == "" {
 		c.SubID = old.SubID
 	}
-	c.ID, c.CreatedAt, c.Up, c.Down = old.ID, old.CreatedAt, old.Up, old.Down
+	c.ID, c.CreatedAt, c.Up, c.Down, c.Num = old.ID, old.CreatedAt, old.Up, old.Down, old.Num
 	c.Devices = old.Devices // changed only through the device endpoints
 	if err := s.putClient(ctx, c); err != nil {
 		return nil, err
