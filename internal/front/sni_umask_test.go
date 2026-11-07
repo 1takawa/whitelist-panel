@@ -16,7 +16,7 @@ func TestSNIFilesStayReadableUnderAStrictUmask(t *testing.T) {
 	old := syscall.Umask(0o077)
 	defer syscall.Umask(old)
 	e := newSNIEnv(t)
-	if err := e.s.Apply(context.Background(), []Site{{"a.example.com", 8444}}); err != nil {
+	if err := e.s.Apply(context.Background(), []Site{{Domain: "a.example.com", Port: 8444}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{e.s.mapFile(), e.s.upstreamsFile(), filepath.Join(e.s.SitesDir, "a.example.com.caddy")} {
