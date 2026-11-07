@@ -21,6 +21,9 @@ const config: Item[] = [
   { to: '/settings', label: 'Настройки', icon: 'sliders' },
 ]
 
+// Pages with a wide table use more of the screen than the others.
+const WIDE_PAGES = ['/clients']
+
 export default function Shell() {
   const { user, loading, logout } = useAuth()
   const { theme, toggle } = useTheme()
@@ -94,7 +97,7 @@ export default function Shell() {
       </aside>
 
       <main id="main" className="min-w-0 overflow-y-auto">
-        <div key={loc.pathname} className="ap-enter mx-auto max-w-[1180px] px-7 pb-16 pt-7 max-[640px]:px-4 max-[640px]:pb-10 max-[640px]:pt-5">
+        <div key={loc.pathname} className={`ap-enter mx-auto px-7 pb-16 pt-7 max-[640px]:px-4 max-[640px]:pb-10 max-[640px]:pt-5 ${WIDE_PAGES.some((p) => loc.pathname === p || loc.pathname.startsWith(p + '/')) ? 'max-w-[1700px]' : 'max-w-[1180px]'}`}>
           <Outlet />
         </div>
       </main>
