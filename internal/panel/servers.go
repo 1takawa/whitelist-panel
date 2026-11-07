@@ -113,6 +113,7 @@ func (s *Service) ListServers(ctx context.Context) ([]ServerView, error) {
 	for _, c := range cls {
 		known[c.Email] = true
 	}
+	owners := s.onlineOwners(ctx, now)
 	out := make([]ServerView, 0, len(srvs))
 	for _, sv := range srvs {
 		v := ServerView{Server: sv, Flag: sv.Flag(), Managed: sv.SSHKey != ""}
@@ -144,8 +145,8 @@ func (s *Service) ListServers(ctx context.Context) ([]ServerView, error) {
 				continue
 			}
 			v.Up, v.Down = v.Up+r.Up, v.Down+r.Down
-			if r.LastActiveAt != nil && now.Sub(*r.LastActiveAt) <= OnlineWindow {
-				v.OnlineClients++
+			if owners[r.Email] == sv.ID {
+				v.OnlineClients++ // online on this server, and not counted on another one it moved to since
 			}
 		}
 		out = append(out, v)
@@ -196,6 +197,7 @@ func (s *Service) ServerClients(ctx context.Context, id string) ([]ServerClient,
 		}
 	}
 	now := s.Now()
+	owners := s.onlineOwners(ctx, now)
 	out := []ServerClient{}
 	for _, c := range cls {
 		attached := slices.ContainsFunc(c.InboundIDs, func(x string) bool { return here[x] })
@@ -205,7 +207,7 @@ func (s *Service) ServerClients(ctx context.Context, id string) ([]ServerClient,
 		}
 		sc := ServerClient{Email: c.Email, Up: t.Up, Down: t.Down, LastActiveAt: t.LastActiveAt,
 			Status: remark.Status(set.Subscription.EffectiveClient(c), now)}
-		sc.Online = t.LastActiveAt != nil && now.Sub(*t.LastActiveAt) <= OnlineWindow
+		sc.Online = owners[c.Email] == id
 		out = append(out, sc)
 	}
 	sort.SliceStable(out, func(i, j int) bool {

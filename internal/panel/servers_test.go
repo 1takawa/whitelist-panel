@@ -11,6 +11,7 @@ import (
 
 	"anypanel2/internal/agent"
 	"anypanel2/internal/model"
+	"anypanel2/internal/store"
 	"anypanel2/internal/xray"
 )
 
@@ -500,5 +501,59 @@ func TestServerCountryIsFoundFromItsAddress(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if again, _ := e.svc.Store.GetServer(ctx, e.srv.ID); again.Country != "DE" {
 		t.Fatalf("a chosen country stays: %+v", again)
+	}
+}
+
+func TestAClientIsOnlineOnceOnTheServerItWasLastSeenOn(t *testing.T) {
+	ctx := context.Background()
+	e := newServersEnv(t)
+	remote, _ := e.svc.CreateInbound(ctx, nodeInbound(e.srv.ID, 443))
+	local, _ := e.svc.CreateInbound(ctx, wsInbound(10001))
+	for _, name := range []string{"alice", "bob", "carol"} {
+		_, _ = e.svc.CreateClient(ctx, model.Client{Email: name, Enable: true, InboundIDs: []string{remote.ID, local.ID}})
+	}
+	now := *e.now
+	moved := map[string]store.Traffic{"alice": {Up: 1}, "bob": {Up: 1}, "carol": {Up: 1}}
+	// All three moved traffic on the node a minute ago; alice and bob then moved to the main server.
+	_ = e.svc.Store.AddServerTraffic(ctx, e.srv.ID, moved, now.Add(-60*time.Second))
+	_ = e.svc.Store.AddServerTraffic(ctx, LocalServerID, map[string]store.Traffic{"alice": {Up: 1}, "bob": {Up: 1}}, now.Add(-10*time.Second))
+
+	list, _ := e.svc.ListServers(ctx)
+	if list[0].OnlineClients != 1 {
+		t.Fatalf("only carol is still seen on the node: %d", list[0].OnlineClients)
+	}
+	d, err := e.svc.DashboardNow(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Clients.OnlineHere != 2 {
+		t.Fatalf("alice and bob are online on the main server: %d", d.Clients.OnlineHere)
+	}
+	if list[0].OnlineClients+d.Clients.OnlineHere != 3 {
+		t.Fatal("the servers' counts add up to the three clients online")
+	}
+	rows, _ := e.svc.ServerClients(ctx, e.srv.ID)
+	online := map[string]bool{}
+	for _, r := range rows {
+		online[r.Email] = r.Online
+	}
+	if online["alice"] || online["bob"] || !online["carol"] {
+		t.Fatalf("in the node's list a client that moved on is not online: %v", online)
+	}
+
+	// Later the node sees alice again: she is on the node now and no longer on the main server.
+	_ = e.svc.Store.AddServerTraffic(ctx, e.srv.ID, map[string]store.Traffic{"alice": {Up: 1}}, now)
+	list, _ = e.svc.ListServers(ctx)
+	d, _ = e.svc.DashboardNow(ctx)
+	if list[0].OnlineClients != 2 || d.Clients.OnlineHere != 1 {
+		t.Fatalf("alice moved back: node %d, main %d", list[0].OnlineClients, d.Clients.OnlineHere)
+	}
+
+	// Past the window nobody is online anywhere.
+	*e.now = now.Add(OnlineWindow + time.Minute)
+	list, _ = e.svc.ListServers(ctx)
+	d, _ = e.svc.DashboardNow(ctx)
+	if list[0].OnlineClients != 0 || d.Clients.OnlineHere != 0 {
+		t.Fatalf("%d %d", list[0].OnlineClients, d.Clients.OnlineHere)
 	}
 }

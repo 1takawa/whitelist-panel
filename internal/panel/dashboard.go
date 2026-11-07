@@ -177,8 +177,9 @@ func (s *Service) Dashboard(ctx context.Context, sys sysinfo.Info, version strin
 	d.TopPeriods.All = d.Top
 	sort.Strings(d.Online)
 	if rows, err := s.Store.ListServerTraffic(ctx, LocalServerID); err == nil {
+		owners := s.onlineOwners(ctx, now)
 		for _, r := range rows {
-			if r.LastActiveAt != nil && now.Sub(*r.LastActiveAt) <= OnlineWindow {
+			if owners[r.Email] == LocalServerID {
 				d.Clients.OnlineHere++
 			}
 		}
