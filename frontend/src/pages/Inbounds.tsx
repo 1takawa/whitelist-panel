@@ -4,7 +4,8 @@ import { api } from '../api'
 import { Icon } from '../components/Icon'
 import { Sortable, SortGrip } from '../components/Sortable'
 import { ask } from '../components/confirm'
-import { Alert, Badge, Button, Card, IconButton, PageHeader, Select, StatusChip, Switch } from '../components/ui'
+import RoutingSelect from '../components/RoutingSelect'
+import { Alert, Badge, Button, Card, IconButton, PageHeader, StatusChip, Switch } from '../components/ui'
 import { useLoad } from '../hooks'
 import { formatBytes } from '../lib'
 import { flagOf as flagOfCountry } from '../countries'
@@ -20,8 +21,6 @@ const LEAD_FLAG = /^[\u{1F1E6}-\u{1F1FF}]{2}\s*/u
 // An inbound at its traffic limit or past its end date is left out of the Xray config.
 const stoppedByLimit = (r: Inbound) => (r.totalBytes > 0 && r.up + r.down >= r.totalBytes) || (r.expiryAt !== null && new Date(r.expiryAt) <= new Date())
 
-// The routing of the client app for one connection, as the list shows it (the full names are in the connection's form).
-const ROUTING_CHOICES: [string, string][] = [['', 'Маршрут: как в подписке'], ['none', 'Маршрут: без правил'], ['default', 'Маршрут: DEFAULT'], ['whitelist', 'Маршрут: WHITELIST'], ['whitelist_ru', 'Маршрут: whitelist_RU']]
 
 const AUTO = '__auto__' // the automatic node among the rows
 const groupSlot = (id: string) => `${AUTO}:${id}` // an extra automatic node
@@ -220,15 +219,7 @@ export default function Inbounds() {
                 <span className="truncate">{name}</span>
                 {r.excludeFromSub && <Badge tone="warn">Скрыто</Badge>}
               </div>
-              <Select
-                aria-label="Маршрутизация на клиенте"
-                title="Маршрутизация на клиенте: правила приложения для этого подключения (формат Xray JSON; Happ и INCY получают его сами)"
-                value={r.clientRouting ?? ''}
-                onChange={(e) => void save(r, { clientRouting: e.target.value })}
-                className="!h-8 !w-auto min-w-[11.5rem] !py-0 !text-xs"
-              >
-                {ROUTING_CHOICES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </Select>
+              <RoutingSelect value={r.clientRouting ?? ''} onChange={(id) => void save(r, { clientRouting: id })} />
               <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[12px] tabular-nums text-dim" title={r.expiryAt ? `Всего трафика через подключение. Действует до ${new Date(r.expiryAt).toLocaleDateString('ru-RU')}` : 'Всего трафика через подключение'}>
                 {r.totalBytes > 0 ? `${formatBytes(used)} / ${formatBytes(r.totalBytes)}` : formatBytes(used)}
               </span>
