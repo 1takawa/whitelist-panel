@@ -277,3 +277,48 @@ func TestAutoNodeGroupsAreValidatedAndOrdered(t *testing.T) {
 		t.Error("an unknown group must be refused")
 	}
 }
+
+func TestConnectionRoutingIsCheckedAndReachesTheEndpoint(t *testing.T) {
+	svc, _, _ := newService(t)
+	ctx := context.Background()
+	set, _ := svc.GetSettings(ctx)
+	set.PanelDomain = "panel.example.com"
+	if _, err := svc.PutSettings(ctx, *set); err != nil {
+		t.Fatal(err)
+	}
+	bad := wsInbound(10201)
+	bad.ClientRouting = "everything"
+	if _, err := svc.CreateInbound(ctx, bad); !isInvalid(err) {
+		t.Fatalf("an unknown routing is refused: %v", err)
+	}
+	for i, id := range []string{"", "none", "default", "whitelist", "whitelist_ru"} {
+		in := wsInbound(10210 + i)
+		in.Remark = "r" + id
+		in.ClientRouting = id
+		if _, err := svc.CreateInbound(ctx, in); err != nil {
+			t.Fatalf("%q: %v", id, err)
+		}
+	}
+	list, _ := svc.ListInbounds(ctx)
+	cl, err := svc.CreateClient(ctx, model.Client{Email: "routing", Enable: true, InboundIDs: func() []string {
+		var ids []string
+		for _, in := range list {
+			ids = append(ids, in.ID)
+		}
+		return ids
+	}()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := svc.PublicSubscription(ctx, cl.SubID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, e := range sub.Endpoints {
+		got[strings.TrimSuffix(e.Name, "-routing")] = e.Routing
+	}
+	if len(got) != 5 || got["rwhitelist"] != "whitelist" || got["rnone"] != "none" || got["r"] != "" {
+		t.Fatalf("the endpoints carry the routing of their connection: %v", got)
+	}
+}

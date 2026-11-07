@@ -127,6 +127,9 @@ func wantsAutoNodeJSON(set model.SubSettings, ua string, eps []links.Endpoint) b
 	if a.KeepLinks || !matches(autoNodeAppsRe, ua) {
 		return false
 	}
+	if hasNodeRouting(eps) {
+		return true // a connection with its own routing exists only in the JSON format
+	}
 	if a.Enable {
 		n := 0
 		for _, e := range eps {
@@ -154,6 +157,41 @@ func wantsAutoNodeJSON(set model.SubSettings, ua string, eps []links.Endpoint) b
 		}
 	}
 	return false
+}
+
+// hasNodeRouting reports whether any connection has a routing of its own.
+func hasNodeRouting(eps []links.Endpoint) bool {
+	for _, e := range eps {
+		if e.Routing != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeProfiles are the links of the routing profiles the connections ask for, so the JSON configs can carry them.
+func (s *Server) nodeProfiles(r *http.Request, eps []links.Endpoint) map[string]string {
+	need := map[string]bool{}
+	for _, e := range eps {
+		if e.Routing != "" && e.Routing != "none" {
+			need[e.Routing] = true
+		}
+	}
+	if len(need) == 0 {
+		return nil
+	}
+	ps, err := s.svc.RoutingPresets(r.Context(), "happ", false)
+	if err != nil {
+		s.log.Warn("routing profiles are not available for the connections", "err", err)
+		return nil
+	}
+	out := map[string]string{}
+	for _, p := range ps {
+		if need[p.ID] {
+			out[p.ID] = p.Link
+		}
+	}
+	return out
 }
 
 // autoNodeAppsRe matches the User-Agent of the apps that take the automatic node from the JSON format.
@@ -210,7 +248,13 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request, k kind) {
 		h.Set(key, v)
 	}
 	// Routing, Hide-Settings and the headers of the app that is asking (Happ, INCY); see sub.ExtraHeaders.
-	for key, v := range sub.ExtraHeadersFor(set, ua, sb.Banner) {
+	// With connections that have their own routing the whole routing is in the JSON configs: the app's global profile in the
+	// header or the body would be laid over it, so it is not sent.
+	hdr := set
+	if k == kindJSON && hasNodeRouting(sb.Endpoints) {
+		hdr.Happ.EnableRouting, hdr.Incy.EnableRouting = false, false
+	}
+	for key, v := range sub.ExtraHeadersFor(hdr, ua, sb.Banner) {
 		h.Set(key, v)
 	}
 	h.Set("Cache-Control", "no-store")
@@ -226,7 +270,7 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request, k kind) {
 		h.Set("Content-Type", "text/yaml; charset=utf-8")
 		_, _ = w.Write(body)
 	case kindJSON:
-		body, err := s.xrayJSON(sb, ua)
+		body, err := s.xrayJSON(r, sb, ua)
 		if err != nil {
 			s.log.Error("xray json failed", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -280,12 +324,12 @@ func (s *Server) clash(sb *panel.Subscription) ([]byte, error) {
 	return formats.Clash(sb.Endpoints, opt)
 }
 
-func (s *Server) xrayJSON(sb *panel.Subscription, ua string) ([]byte, error) {
+func (s *Server) xrayJSON(r *http.Request, sb *panel.Subscription, ua string) ([]byte, error) {
 	f := sb.Settings.Subscription.Formats
 	return formats.XrayJSON(sb.Endpoints, formats.JSONOptions{
 		AlwaysArray: f.JSONAlwaysArray, Mux: f.JSONMux, Fragment: f.JSONFragment, Noises: f.JSONNoises,
 		Rules: f.JSONRules, DNS: f.JSONDNS, Info: sb.InfoNames, Auto: autoOptions(sb.Settings.Subscription.AutoNode), MoreAuto: moreAutoOptions(sb.Settings.Subscription.AutoNode),
-		Profile: appRoutingProfile(sb.Settings.Subscription, ua),
+		Profile: appRoutingProfile(sb.Settings.Subscription, ua), NodeProfiles: s.nodeProfiles(r, sb.Endpoints),
 	})
 }
 

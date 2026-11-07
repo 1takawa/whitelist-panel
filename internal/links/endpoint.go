@@ -40,6 +40,7 @@ type Endpoint struct {
 	FinalMask     map[string]any // transport masks
 	NoAuto        bool           // the inbound asked to stay out of the automatic node
 	ID            string         // the inbound's id: what the groups of the automatic node name
+	Routing       string         // the inbound's own client routing: "", "none" or a profile id
 	Order         int            // the inbound's SortOrder: where it stands in the list
 	AllowInsecure bool
 	ECH           string
@@ -79,6 +80,7 @@ func NewEndpoint(in model.Inbound, c model.Client, s model.Settings, name string
 	e.FinalMask = in.FinalMask()
 	e.NoAuto = in.ExcludeFromAuto
 	e.ID = in.ID
+	e.Routing = in.ClientRouting
 	e.Order = in.SortOrder
 	switch in.Network {
 	case model.NetWS:

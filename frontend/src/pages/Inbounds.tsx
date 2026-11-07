@@ -20,6 +20,8 @@ const LEAD_FLAG = /^[\u{1F1E6}-\u{1F1FF}]{2}\s*/u
 // An inbound at its traffic limit or past its end date is left out of the Xray config.
 const stoppedByLimit = (r: Inbound) => (r.totalBytes > 0 && r.up + r.down >= r.totalBytes) || (r.expiryAt !== null && new Date(r.expiryAt) <= new Date())
 
+const ROUTING_NAMES: Record<string, string> = { none: 'без правил', default: 'DEFAULT', whitelist: 'WHITELIST', whitelist_ru: 'whitelist_RU' }
+
 const AUTO = '__auto__' // the automatic node among the rows
 const groupSlot = (id: string) => `${AUTO}:${id}` // an extra automatic node
 
@@ -216,6 +218,7 @@ export default function Inbounds() {
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 font-semibold">
                 <span className="truncate">{name}</span>
                 {r.excludeFromSub && <Badge tone="warn">Скрыто</Badge>}
+                {r.clientRouting && <Badge>Маршрут: {ROUTING_NAMES[r.clientRouting] ?? r.clientRouting}</Badge>}
               </div>
               <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[12px] tabular-nums text-dim" title={r.expiryAt ? `Всего трафика через подключение. Действует до ${new Date(r.expiryAt).toLocaleDateString('ru-RU')}` : 'Всего трафика через подключение'}>
                 {r.totalBytes > 0 ? `${formatBytes(used)} / ${formatBytes(r.totalBytes)}` : formatBytes(used)}

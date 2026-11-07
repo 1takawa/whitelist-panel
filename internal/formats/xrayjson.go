@@ -22,6 +22,9 @@ type JSONOptions struct {
 	Auto        *AutoOptions   // the automatic node entry; nil = none
 	MoreAuto    []*AutoOptions // more automatic nodes, each over its own connections
 	Profile     string         // the app's routing profile (a happ:// or incy:// link, or JSON), written into the configs as rules
+	// NodeProfiles are the profiles a connection may ask for by id (Endpoint.Routing), as links; a connection that asks for
+	// "none" gets no profile at all. A connection that asks for nothing gets Profile.
+	NodeProfiles map[string]string
 }
 
 type obj = map[string]any
@@ -180,7 +183,17 @@ func clientConfig(e links.Endpoint, opt JSONOptions) (obj, error) {
 		obj{"tag": "block", "protocol": "blackhole"})
 
 	dns := clientDNS(opt)
-	rules, strategy := baseRules(opt, false)
+	own := opt // the connection's own routing, when it asked for one
+	switch e.Routing {
+	case "":
+	case "none":
+		own.Profile = ""
+	default:
+		if p, ok := opt.NodeProfiles[e.Routing]; ok {
+			own.Profile = p
+		}
+	}
+	rules, strategy := baseRules(own, false)
 
 	return obj{
 		"remarks":   e.Name,

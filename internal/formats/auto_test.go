@@ -263,3 +263,48 @@ func TestRoutingProfileIsWrittenIntoTheConfigs(t *testing.T) {
 		t.Fatal("proxy rules of the profile go to the balancer")
 	}
 }
+
+// proxyDomains are the domains a config sends through the proxy (the profile's own list in testProfile).
+func ruleDomains(cfg map[string]any) string {
+	var all []string
+	for _, r := range cfg["routing"].(map[string]any)["rules"].([]any) {
+		if d, ok := r.(map[string]any)["domain"].([]any); ok {
+			for _, x := range d {
+				all = append(all, x.(string))
+			}
+		}
+	}
+	return strings.Join(all, ",")
+}
+
+const otherProfile = `{"Name":"Other","RouteOrder":"block-proxy-direct","DomainStrategy":"IPIfNonMatch",
+ "DirectSites":["geosite:microsoft"],"ProxySites":["geosite:youtube"],"BlockSites":[]}`
+
+func TestEachConnectionCanHaveItsOwnRouting(t *testing.T) {
+	list := eps()[:4]
+	list[0].Routing = ""          // follows the subscription
+	list[1].Routing = "none"      // no rules at all
+	list[2].Routing = "whitelist" // a profile of its own
+	list[3].Routing = "unknown"   // an id nobody gave a profile for: follows the subscription
+	cfgs := decodeConfigs(t, mustJSON(t, list, JSONOptions{Profile: testProfile, NodeProfiles: map[string]string{"whitelist": otherProfile}}))
+
+	if d := ruleDomains(cfgs[0]); !strings.Contains(d, "geosite:category-ru") {
+		t.Errorf("the subscription's profile: %s", d)
+	}
+	if d := ruleDomains(cfgs[1]); strings.Contains(d, "geosite") {
+		t.Errorf("no profile: %s", d)
+	}
+	if d := ruleDomains(cfgs[2]); !strings.Contains(d, "geosite:microsoft") || strings.Contains(d, "category-ru") {
+		t.Errorf("the connection's own profile: %s", d)
+	}
+	if d := ruleDomains(cfgs[3]); !strings.Contains(d, "geosite:category-ru") {
+		t.Errorf("an unknown id falls back: %s", d)
+	}
+	// The private-address rule is not a profile: every connection keeps it.
+	for i, c := range cfgs {
+		if !strings.Contains(string(mustJSON(t, list[i:i+1], JSONOptions{Profile: testProfile, NodeProfiles: map[string]string{"whitelist": otherProfile}})), "geoip:private") {
+			t.Errorf("connection %d lost the private-address rule", i)
+		}
+		_ = c
+	}
+}

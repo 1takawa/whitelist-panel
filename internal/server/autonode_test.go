@@ -68,3 +68,26 @@ func TestHappGetsJSONForAnAutoNodeGroupWithTwoServers(t *testing.T) {
 		t.Error("a group that is off changes nothing")
 	}
 }
+
+func TestHappGetsJSONForAConnectionWithItsOwnRouting(t *testing.T) {
+	off := model.SubSettings{}
+	own := []links.Endpoint{{ID: "a"}, {ID: "b", Routing: "whitelist"}}
+	for _, ua := range []string{"Happ/2.1.0/ios", "INCY/1.4"} {
+		if !wantsAutoNodeJSON(off, ua, own) {
+			t.Errorf("%s needs the JSON format for per-connection routing, even with the automatic node off", ua)
+		}
+	}
+	if wantsAutoNodeJSON(off, "v2rayN/6.0", own) {
+		t.Error("other apps keep their format")
+	}
+	if wantsAutoNodeJSON(off, "Happ/2.1.0", []links.Endpoint{{ID: "a"}, {ID: "b"}}) {
+		t.Error("without own routing nothing changes")
+	}
+	keep := model.SubSettings{AutoNode: model.AutoNodeSettings{KeepLinks: true}}
+	if wantsAutoNodeJSON(keep, "Happ/2.1.0", own) {
+		t.Error("KeepLinks leaves the apps on the plain list")
+	}
+	if !hasNodeRouting(own) || hasNodeRouting(own[:1]) {
+		t.Error("hasNodeRouting")
+	}
+}

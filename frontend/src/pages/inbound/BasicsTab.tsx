@@ -102,6 +102,15 @@ export default function BasicsTab({ onChanged }: { onChanged: () => void }) {
           <Input type="number" value={d.sortOrder} onChange={(e) => set('sortOrder', Number(e.target.value) || 0)} />
         </Field>
 
+        <Field label="Маршрутизация на клиенте" hint="Правила приложения для этого подключения отдельно: например, у одного сервера «DEFAULT», у другого «WHITELIST». Работает в формате Xray JSON: Happ и INCY получают его сами, остальные приложения читают его по адресу формата. В обычном списке ссылок маршрутизации у подключения нет.">
+          <Select value={d.clientRouting ?? ''} onChange={(e) => set('clientRouting', e.target.value)}>
+            <option value="">Как в подписке (по умолчанию)</option>
+            <option value="none">Без правил: всё через сервер</option>
+            <option value="default">DEFAULT: Россия и Беларусь напрямую</option>
+            <option value="whitelist">WHITELIST: напрямую только белые списки РФ</option>
+            <option value="whitelist_ru">whitelist_RU: Россия напрямую, с доменами Яндекса и VK</option>
+          </Select>
+        </Field>
         <Toggle label="Не включать в подписки" checked={d.excludeFromSub} onChange={(v) => set('excludeFromSub', v)} />
         <Toggle label="Не включать в автоузел (останется отдельной записью)" checked={d.excludeFromAuto} onChange={(v) => set('excludeFromAuto', v)} />
         {d.protocol === 'vless' && <Toggle label="Отключить XTLS flow (клиентам не выдаётся xtls-rprx-vision)" checked={d.disableFlow} onChange={(v) => set('disableFlow', v)} />}

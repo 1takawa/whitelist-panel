@@ -30,6 +30,7 @@ export function emptyInbound(): Inbound {
     excludeFromSub: false,
     disableFlow: false,
     excludeFromAuto: false,
+    clientRouting: '',
     shareAddress: '',
     totalBytes: 0,
     expiryAt: null,

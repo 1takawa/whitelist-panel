@@ -38,6 +38,7 @@ export type Inbound = {
   excludeFromSub: boolean
   disableFlow: boolean
   excludeFromAuto: boolean
+  clientRouting: string // "" = as in the subscription, "none", or a profile id
   nodeDomain?: string // a node of the main server on a domain of its own
   shareAddress: '' | 'listen'
   totalBytes: number

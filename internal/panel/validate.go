@@ -154,6 +154,11 @@ func normalizeLimits(in *model.Inbound) error {
 	default:
 		return invalid("traffic reset must be never, hourly, daily, weekly or monthly")
 	}
+	switch in.ClientRouting {
+	case "", "none", "default", "whitelist", "whitelist_ru":
+	default:
+		return invalid("client routing must be empty, none, default, whitelist or whitelist_ru")
+	}
 	switch in.ShareAddress {
 	case "", "listen":
 	default:

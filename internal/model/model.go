@@ -73,6 +73,10 @@ type Inbound struct {
 	DisableFlow     bool   `json:"disableFlow" bson:"disableFlow"`         // never send a client's XTLS flow for this inbound
 	ShareAddress    string `json:"shareAddress" bson:"shareAddress"`       // "" = automatic, "listen" = the listen address
 	ExcludeFromAuto bool   `json:"excludeFromAuto" bson:"excludeFromAuto"` // keep the inbound out of the automatic node
+	// ClientRouting is the routing profile of the client app for this connection alone: "" = the one of the subscription,
+	// "none" = no rules (everything goes through the server), or the id of a profile (default, whitelist, whitelist_ru).
+	// It is written into the connection's own config, so it reaches the apps that read the Xray JSON format.
+	ClientRouting string `json:"clientRouting" bson:"clientRouting"`
 
 	// Limits of the whole inbound. TotalBytes 0 = unlimited; ExpiryAt nil = never. A used-up or expired inbound is
 	// left out of the Xray config until the counters are reset (TrafficReset) or the limit is raised.
