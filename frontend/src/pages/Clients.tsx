@@ -231,7 +231,10 @@ export default function Clients() {
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-0.5">
                       <IconButton icon="link" label="Ссылки" onClick={() => setLinks(c)} />
-                      <IconButton icon="phone" label={c.devices?.length ? `Устройства (${c.devices.length})` : 'Устройства'} onClick={() => setDevicesOf(c.id)} />
+                      <button type="button" aria-label={`Устройства: ${c.devices?.length ?? 0}`} title="Устройства на подписке" onClick={() => setDevicesOf(c.id)} className="flex h-8 min-w-[3.4rem] items-center justify-center gap-1 rounded-[9px] px-1.5 text-dim hover:bg-surface-2 hover:text-ink">
+                        <Icon name="phone" />
+                        <span className={`text-xs tabular-nums ${c.devices?.length ? '' : 'text-faint'}`}>({c.devices?.length ?? 0})</span>
+                      </button>
                       <IconButton icon="pencil" label="Изменить" onClick={() => setEditing(c)} />
                       <IconButton
                         icon="more"
