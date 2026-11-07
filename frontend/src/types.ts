@@ -147,6 +147,7 @@ export type SubSettings = {
   enable: boolean
   path: string
   domain: string
+  moveToDomain: boolean // Happ is told to switch its saved address to the domain
   uri: string
   // information
   encode: boolean

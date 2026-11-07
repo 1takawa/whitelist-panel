@@ -758,6 +758,13 @@ func (s *Service) syncSNI(ctx context.Context, entryServerID string) error {
 	if err != nil {
 		return err
 	}
+	return s.syncSNIWith(ctx, entryServerID, list)
+}
+
+// syncSNILocked is syncSNI of the main server.
+func (s *Service) syncSNILocked(ctx context.Context) error { return s.syncSNI(ctx, "") }
+
+func (s *Service) syncSNIWith(ctx context.Context, entryServerID string, list []model.Cascade) error {
 	all, err := s.Store.ListInbounds(ctx)
 	if err != nil {
 		return err
@@ -779,6 +786,12 @@ func (s *Service) syncSNI(ctx context.Context, entryServerID string) error {
 	if entryServerID == "" {
 		if s.SNI == nil {
 			return nil
+		}
+		// The domain of the subscriptions, when it is not the panel's own, is a web site of Caddy that leads to the panel.
+		if set, err := s.settings(ctx); err == nil && s.PanelListen != "" {
+			if d := set.Subscription.Domain; d != "" && d != set.PanelDomain {
+				sites = append(sites, front.Site{Domain: d, Proxy: s.PanelListen})
+			}
 		}
 		return s.SNI.Apply(ctx, sites)
 	}

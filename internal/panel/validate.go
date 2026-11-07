@@ -444,6 +444,9 @@ func normalizeSubSettings(s *model.SubSettings) error {
 	if s.Domain != "" && !isHost(s.Domain) {
 		return invalid("subscription domain %q is not a valid hostname", s.Domain)
 	}
+	if s.MoveToDomain && s.Domain == "" {
+		return invalid("to move the apps to a new domain, set the subscription domain first")
+	}
 	s.URI = strings.TrimSpace(s.URI)
 	if s.URI != "" {
 		u, err := url.Parse(s.URI)

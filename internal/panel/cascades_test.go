@@ -835,3 +835,64 @@ func TestMainServerAddressComesFromTheMachineWhenKnown(t *testing.T) {
 		t.Fatalf("falls back to the panel's domains: %+v", got)
 	}
 }
+
+func TestSubscriptionDomainBecomesACaddySiteAndIsCheckedAgainstThisServer(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newService(t)
+	fake := &fakeSNI{}
+	svc.SNI = fake
+	svc.PanelListen = "127.0.0.1:28270"
+	set, _ := svc.GetSettings(ctx)
+	set.PanelDomain = "panel.example.com"
+	if _, err := svc.PutSettings(ctx, *set); err != nil {
+		t.Fatal(err)
+	}
+	calls := fake.calls
+
+	set.Subscription.Domain = "subs.example.com"
+	if _, err := svc.PutSettings(ctx, *set); err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != calls+1 || len(fake.sites) != 1 || fake.sites[0].Domain != "subs.example.com" || fake.sites[0].Proxy != "127.0.0.1:28270" {
+		t.Fatalf("the domain is handed to Caddy: %+v", fake.sites)
+	}
+	calls = fake.calls
+	if _, err := svc.PutSettings(ctx, *set); err != nil || fake.calls != calls {
+		t.Fatalf("nothing changed, Caddy is not touched: %v", err)
+	}
+	// The panel's own domain needs no site of its own, and a removed domain leaves.
+	set.Subscription.Domain = "panel.example.com"
+	if _, err := svc.PutSettings(ctx, *set); err != nil || len(fake.sites) != 0 {
+		t.Fatalf("%v %+v", err, fake.sites)
+	}
+	// A refusal of Caddy is told, and the settings are saved all the same.
+	fake.fail = errors.New("caddy said no")
+	set.Subscription.Domain = "subs.example.com"
+	if _, err := svc.PutSettings(ctx, *set); err == nil || !strings.Contains(err.Error(), "caddy said no") {
+		t.Fatalf("%v", err)
+	}
+	if got, _ := svc.GetSettings(ctx); got.Subscription.Domain != "subs.example.com" {
+		t.Fatal("saved")
+	}
+	// Moving the apps needs a domain to move to.
+	set.Subscription.Domain = ""
+	set.Subscription.MoveToDomain = true
+	fake.fail = nil
+	if _, err := svc.PutSettings(ctx, *set); !isInvalid(err) {
+		t.Fatalf("%v", err)
+	}
+
+	// The check: no record, a record for another server, a record for this one that does not answer yet.
+	svc.PublicIP = func(context.Context) (string, error) { return "203.0.113.10", nil }
+	svc.LookupHost = func(context.Context, string) ([]string, error) { return nil, errors.New("no such host") }
+	if v, err := svc.CheckSubDomain(ctx, "subs.example.com"); err != nil || v.OK || !strings.Contains(v.Problem, "A-записи") {
+		t.Fatalf("%v %+v", err, v)
+	}
+	svc.LookupHost = func(context.Context, string) ([]string, error) { return []string{"198.51.100.7"}, nil }
+	if v, _ := svc.CheckSubDomain(ctx, "subs.example.com"); v.OK || !strings.Contains(v.Problem, "198.51.100.7") || !strings.Contains(v.Problem, "203.0.113.10") {
+		t.Fatalf("%+v", v)
+	}
+	if _, err := svc.CheckSubDomain(ctx, "not a host"); !isInvalid(err) {
+		t.Fatalf("%v", err)
+	}
+}

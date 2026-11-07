@@ -67,6 +67,8 @@ type Service struct {
 	PanelHost string
 	// SNI manages the extra REALITY domains of the main server (nginx map, decoy sites); nil = not available here.
 	SNI SNIFront
+	// PanelListen is the loopback address the panel listens on: the Caddy site of the subscription domain proxies to it.
+	PanelListen string
 	// LookupHost resolves a domain (nil = the system resolver; replaced in tests).
 	LookupHost func(ctx context.Context, host string) ([]string, error)
 
@@ -846,8 +848,18 @@ func (s *Service) PutSettings(ctx context.Context, v model.Settings) (*model.Set
 		v.XrayProfile = cur.XrayProfile                               // saved on its own page, never by the settings form
 		v.Subscription.Preview.Image = cur.Subscription.Preview.Image // uploaded through its own endpoint
 	}
+	var oldSub string
+	if cur, err := s.settings(ctx); err == nil {
+		oldSub = cur.Subscription.Domain
+	}
 	if err := s.Store.PutSettings(ctx, v); err != nil {
 		return nil, err
+	}
+	// A new or removed subscription domain changes what Caddy serves. The settings are saved either way; a failure is told.
+	if v.Subscription.Domain != oldSub {
+		if err := s.syncSNILocked(ctx); err != nil {
+			return &v, invalid("настройки сохранены, но домен подписки не подключён: %v", err)
+		}
 	}
 	// Calendar expiry and the time zone change who may connect, so Xray is re-synced (a no-op when nothing changed).
 	if s.Xray != nil {

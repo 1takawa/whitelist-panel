@@ -40,10 +40,13 @@ type SNI struct {
 	run  func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
-// Site is one REALITY domain served behind nginx: Port is the loopback port of its Xray inbound.
+// Site is one REALITY domain served behind nginx: Port is the loopback port of its Xray inbound. With Proxy set it is
+// instead a plain web domain: nginx sends it to Caddy like any name it does not know, and Caddy (with a certificate of its
+// own) passes it on to the address in Proxy, the panel.
 type Site struct {
 	Domain string
 	Port   int
+	Proxy  string // e.g. 127.0.0.1:28270
 }
 
 // isManaged reports whether a file starts with the marker the panel writes into the files it owns. Files written by older
@@ -78,6 +81,10 @@ func (s *SNI) Render(sites []Site) (mapConf, upstreams string, caddy map[string]
 	caddy = map[string]string{}
 	seen := map[int]bool{}
 	for _, st := range sorted {
+		if st.Proxy != "" {
+			caddy[st.Domain+".caddy"] = fmt.Sprintf("%s%s {\n    encode zstd gzip\n    header Strict-Transport-Security \"max-age=31536000\"\n    reverse_proxy %s\n}\n", sniHeader, st.Domain, st.Proxy)
+			continue
+		}
 		fmt.Fprintf(&m, "    %s  %s;\n", st.Domain, upstreamName(st.Port))
 		if !seen[st.Port] {
 			seen[st.Port] = true

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api, apiUpload, ApiError } from '../api'
 import { Tabs } from '../components/Tabs'
 import TemplateField from '../components/TemplateField'
-import { Alert, Button, Card, Field, Input, PageHeader, Select, Toggle } from '../components/ui'
+import { Alert, Button, Card, Field, Input, PageHeader, Select, StatusChip, Toggle } from '../components/ui'
 import AppPreview, { type AppId } from '../components/AppPreview'
 import { useLoad, useMediaQuery } from '../hooks'
 import type { LinkPreview, PageSettings, ProfileMode, Settings, SubSettings, TemplateToken } from '../types'
@@ -137,6 +137,7 @@ export default function Subscription() {
               <Field label="Домен подписки" hint="Если пусто — домен панели. Нужен, когда подписку отдают через другой домен, например за CDN.">
                 <Input value={sub.domain} onChange={(e) => set({ domain: e.target.value })} placeholder={form.panelDomain || 'sub.example.com'} />
               </Field>
+              <SubDomainBlock domain={sub.domain} panelDomain={form.panelDomain} move={sub.moveToDomain ?? false} onMove={(v) => set({ moveToDomain: v })} />
               <Field label="Полный адрес (URI)" hint="Переопределяет домен и путь целиком, например https://edge.example.com/prefix/. Адрес только подставляется в ссылки: маршрутизацию на него настраиваете вы.">
                 <Input value={sub.uri} onChange={(e) => set({ uri: e.target.value })} placeholder="https://" />
               </Field>
@@ -315,6 +316,50 @@ export default function Subscription() {
       )}
       </div>
     </section>
+  )
+}
+
+// What to do with a separate subscription domain: it is connected to the web server when the settings are saved, can be
+// checked, and the Happ users can be moved to it without a new link.
+function SubDomainBlock({ domain, panelDomain, move, onMove }: { domain: string; panelDomain: string; move: boolean; onMove: (v: boolean) => void }) {
+  const [res, setRes] = useState<{ ok: boolean; message?: string; problem?: string; addresses: string[] } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  if (!domain || domain === panelDomain) return null
+
+  async function check() {
+    setBusy(true)
+    setErr('')
+    try {
+      setRes(await api('/api/settings/check-sub-domain', { method: 'POST', body: { domain } }))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="grid gap-3 rounded-xl border border-line p-4">
+      <p className="text-xs text-dim">
+        Домен подключается к веб-серверу при сохранении, сертификат выпускается сам. На нём открываются только подписки и их страница, панели там нет. Старые ссылки на домен панели продолжают работать.
+        Нужна A-запись домена на адрес этого сервера.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => void check()} disabled={busy}>{busy ? 'Проверяем…' : 'Проверить домен'}</Button>
+        {res && <StatusChip tone={res.ok ? 'ok' : 'warn'}>{res.ok ? 'Отвечает' : 'Не готов'}</StatusChip>}
+      </div>
+      {res?.ok && <Alert tone="ok">{res.message}</Alert>}
+      {res && !res.ok && <Alert tone="warn">{res.problem}</Alert>}
+      {err && <Alert>{err}</Alert>}
+      <div>
+        <Toggle label="Перевести клиентов Happ на этот домен при обновлении подписки" checked={move} onChange={onMove} />
+        <p className="mt-1 text-xs text-dim">
+          Панель отправляет Happ заголовок new-domain: приложение само заменяет адрес подписки, новой ссылки раздавать не нужно. Включайте, когда проверка прошла: иначе приложения уйдут на домен, который не отвечает.
+          Другие приложения (INCY, Clash, v2rayN) остаются на старой ссылке, она работает.
+        </p>
+      </div>
+    </div>
   )
 }
 

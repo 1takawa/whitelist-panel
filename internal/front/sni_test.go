@@ -92,7 +92,7 @@ func read(t *testing.T, p string) string {
 
 func TestSNIWritesIncludesFilesAndReloadsAfterChecking(t *testing.T) {
 	e := newSNIEnv(t)
-	sites := []Site{{"b.example.com", 8445}, {"a.example.com", 8444}}
+	sites := []Site{{Domain: "b.example.com", Port: 8445}, {Domain: "a.example.com", Port: 8444}}
 	if err := e.s.Apply(context.Background(), sites); err != nil {
 		t.Fatal(err)
 	}
@@ -150,12 +150,12 @@ func TestSNIWritesIncludesFilesAndReloadsAfterChecking(t *testing.T) {
 func TestSNIIsIdempotentAndRemovesSitesOfGoneCascades(t *testing.T) {
 	e := newSNIEnv(t)
 	ctx := context.Background()
-	_ = e.s.Apply(ctx, []Site{{"a.example.com", 8444}, {"b.example.com", 8445}})
+	_ = e.s.Apply(ctx, []Site{{Domain: "a.example.com", Port: 8444}, {Domain: "b.example.com", Port: 8445}})
 	n := len(*e.cmds)
-	if err := e.s.Apply(ctx, []Site{{"b.example.com", 8445}, {"a.example.com", 8444}}); err != nil || len(*e.cmds) != n {
+	if err := e.s.Apply(ctx, []Site{{Domain: "b.example.com", Port: 8445}, {Domain: "a.example.com", Port: 8444}}); err != nil || len(*e.cmds) != n {
 		t.Fatalf("the same sites change nothing and reload nothing: %v (%d new commands)", err, len(*e.cmds)-n)
 	}
-	if err := e.s.Apply(ctx, []Site{{"b.example.com", 8445}}); err != nil {
+	if err := e.s.Apply(ctx, []Site{{Domain: "b.example.com", Port: 8445}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(e.s.SitesDir, "a.example.com.caddy")); err == nil {
@@ -172,7 +172,7 @@ func TestSNIIsIdempotentAndRemovesSitesOfGoneCascades(t *testing.T) {
 		t.Fatal("only files the panel wrote are removed")
 	}
 	// Two cascades can never share an upstream name by accident.
-	m, u, _ := e.s.Render([]Site{{"x.example.com", 8444}, {"y.example.com", 8444}})
+	m, u, _ := e.s.Render([]Site{{Domain: "x.example.com", Port: 8444}, {Domain: "y.example.com", Port: 8444}})
 	if strings.Count(u, "upstream c8444") != 1 || !strings.Contains(m, "x.example.com  c8444;") || !strings.Contains(m, "y.example.com  c8444;") {
 		t.Fatalf("%s\n%s", m, u)
 	}
@@ -183,7 +183,7 @@ func TestSNIPutsEverythingBackWhenACheckFails(t *testing.T) {
 		e := newSNIEnv(t)
 		e.fail[bad] = true
 		before := [3]string{read(t, e.s.NginxConf), read(t, e.s.Caddyfile)}
-		err := e.s.Apply(context.Background(), []Site{{"a.example.com", 8444}})
+		err := e.s.Apply(context.Background(), []Site{{Domain: "a.example.com", Port: 8444}})
 		if err == nil || !strings.Contains(err.Error(), "nothing was changed") || !strings.Contains(err.Error(), "boom") {
 			t.Fatalf("%s: %v", bad, err)
 		}
@@ -202,7 +202,7 @@ func TestSNIPutsEverythingBackWhenACheckFails(t *testing.T) {
 		}
 		// And once the problem is gone the same change goes through.
 		delete(e.fail, bad)
-		if err := e.s.Apply(context.Background(), []Site{{"a.example.com", 8444}}); err != nil {
+		if err := e.s.Apply(context.Background(), []Site{{Domain: "a.example.com", Port: 8444}}); err != nil {
 			t.Fatalf("%s: %v", bad, err)
 		}
 	}
@@ -211,11 +211,32 @@ func TestSNIPutsEverythingBackWhenACheckFails(t *testing.T) {
 func TestSNIRefusesAnUnknownNginxLayoutInsteadOfGuessing(t *testing.T) {
 	e := newSNIEnv(t)
 	_ = os.WriteFile(e.s.NginxConf, []byte("events {}\nstream { server { listen 443; proxy_pass x; } }\n"), 0o644)
-	err := e.s.Apply(context.Background(), []Site{{"a.example.com", 8444}})
+	err := e.s.Apply(context.Background(), []Site{{Domain: "a.example.com", Port: 8444}})
 	if err == nil || !strings.Contains(err.Error(), "installer") {
 		t.Fatalf("%v", err)
 	}
 	if strings.Contains(read(t, e.s.NginxConf), "include") {
 		t.Fatal("a file in a layout we do not know is not edited")
+	}
+}
+
+func TestSNIServesAWebDomainThroughCaddyOnly(t *testing.T) {
+	e := newSNIEnv(t)
+	if err := e.s.Apply(context.Background(), []Site{{Domain: "a.example.com", Port: 8444}, {Domain: "subs.example.com", Proxy: "127.0.0.1:28270"}}); err != nil {
+		t.Fatal(err)
+	}
+	if m := read(t, e.s.mapFile()); strings.Contains(m, "subs.example.com") {
+		t.Fatalf("nginx sends a web domain to Caddy like any unknown name, it has no line in the map:\n%s", m)
+	}
+	site := read(t, filepath.Join(e.s.SitesDir, "subs.example.com.caddy"))
+	if !strings.Contains(site, "subs.example.com {") || !strings.Contains(site, "reverse_proxy 127.0.0.1:28270") || strings.Contains(site, "file_server") {
+		t.Fatalf("a site that leads to the panel:\n%s", site)
+	}
+	// The domain removed: its file goes.
+	if err := e.s.Apply(context.Background(), []Site{{Domain: "a.example.com", Port: 8444}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(e.s.SitesDir, "subs.example.com.caddy")); err == nil {
+		t.Fatal("the site of a removed domain is deleted")
 	}
 }

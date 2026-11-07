@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -177,5 +178,69 @@ func TestBuiltInPageIsSelectedWithItsFields(t *testing.T) {
 	bad, _ := json.Marshal(map[string]any{"preset": "hidden-pool", "fields": map[string]string{"site": "javascript:1"}})
 	if rec := do(h, http.MethodPost, "/api/settings/page-preview", string(bad), c, nil); rec.Code != 400 {
 		t.Fatalf("%d", rec.Code)
+	}
+}
+
+// doHost is do with the Host the request came to.
+func doHost(h http.Handler, host, method, path string, hdr map[string]string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, nil)
+	req.Host = host
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestSubscriptionDomainServesOnlySubscriptions(t *testing.T) {
+	h := newHandler(t)
+	subID, _ := subFixture(t, h, "")
+	c := loggedIn(t, h)
+	put := func(sub string) {
+		body := `{"panelDomain":"panel.example.com","subscription":` + sub + `}`
+		if rec := do(h, http.MethodPut, "/api/settings", body, c, nil); rec.Code != 200 {
+			t.Fatalf("%d %s", rec.Code, rec.Body)
+		}
+	}
+	put(`{"domain":"subs.example.com","moveToDomain":true}`)
+	app := map[string]string{"Accept": "*/*", "User-Agent": "Happ/2.1.0"}
+
+	// The subscription itself and what its page needs.
+	if rec := doHost(h, "subs.example.com", http.MethodGet, "/sub/"+subID, app); rec.Code != 200 {
+		t.Fatalf("the subscription: %d", rec.Code)
+	}
+	for _, path := range []string{"/api/health", "/assets/app.js", "/api/sub/" + subID} {
+		if rec := doHost(h, "subs.example.com", http.MethodGet, path, nil); rec.Code != 200 {
+			t.Errorf("%s: %d", path, rec.Code)
+		}
+	}
+	// Nothing of the panel: not even its login page.
+	for _, path := range []string{"/", "/login", "/inbounds", "/api/clients", "/api/auth/me", "/api/settings"} {
+		if rec := doHost(h, "subs.example.com:443", http.MethodGet, path, nil); rec.Code != 404 {
+			t.Errorf("%s must not be served on the subscription domain: %d", path, rec.Code)
+		}
+	}
+	if rec := doHost(h, "subs.example.com", http.MethodPost, "/api/auth/login", map[string]string{csrfHeader: csrfValue}); rec.Code != 404 {
+		t.Errorf("no login there: %d", rec.Code)
+	}
+	// The panel's own domain keeps everything.
+	if rec := doHost(h, "panel.example.com", http.MethodGet, "/login", nil); rec.Code != 200 {
+		t.Errorf("the panel domain: %d", rec.Code)
+	}
+
+	// Happ is told to move to the new domain when it came by the old one, and only then.
+	if got := doHost(h, "panel.example.com", http.MethodGet, "/sub/"+subID, app).Header().Get("new-domain"); got != "subs.example.com" {
+		t.Errorf("new-domain: %q", got)
+	}
+	if got := doHost(h, "subs.example.com", http.MethodGet, "/sub/"+subID, app).Header().Get("new-domain"); got != "" {
+		t.Errorf("already there: %q", got)
+	}
+	if got := doHost(h, "panel.example.com", http.MethodGet, "/sub/"+subID, map[string]string{"Accept": "*/*", "User-Agent": "v2rayN/6.0"}).Header().Get("new-domain"); got != "" {
+		t.Errorf("only Happ is told: %q", got)
+	}
+	put(`{"domain":"subs.example.com","moveToDomain":false}`)
+	if got := doHost(h, "panel.example.com", http.MethodGet, "/sub/"+subID, app).Header().Get("new-domain"); got != "" {
+		t.Errorf("switched off: %q", got)
 	}
 }

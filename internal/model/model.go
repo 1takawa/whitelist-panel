@@ -254,7 +254,10 @@ type SubSettings struct {
 	Enable bool   `json:"enable" bson:"enable"`
 	Path   string `json:"path" bson:"path"`     // URL prefix of the subscription, default /sub/
 	Domain string `json:"domain" bson:"domain"` // host used in subscription URLs instead of the panel domain
-	URI    string `json:"uri" bson:"uri"`       // complete base URL override (for example behind a CDN or path prefix)
+	// MoveToDomain makes the panel tell Happ (the new-domain header) to switch its saved subscription address to Domain the
+	// next time it updates. Turn it on only when the domain already answers: the app would move to an address that is dead.
+	MoveToDomain bool   `json:"moveToDomain" bson:"moveToDomain"`
+	URI          string `json:"uri" bson:"uri"` // complete base URL override (for example behind a CDN or path prefix)
 
 	// Information.
 	Encode           bool   `json:"encode" bson:"encode"`                     // base64-encode the response body

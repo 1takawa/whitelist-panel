@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -33,7 +34,8 @@ const (
 // prefixes are the configured URL prefixes; they are cached for a few seconds so ordinary requests do not hit the
 // database, and reset by the settings handler.
 type prefixes struct {
-	raw, clash, json string // clash and json are empty when that format is switched off
+	raw, clash, json   string // clash and json are empty when that format is switched off
+	subHost, panelHost string // the subscription domain (when it is not the panel's own) and the panel's
 }
 
 type subPathCache struct {
@@ -58,7 +60,10 @@ func (s *Server) prefixes(r *http.Request) prefixes {
 		return prefixes{raw: "/sub/"}
 	}
 	sb := set.Subscription
-	p := prefixes{raw: sb.Path}
+	p := prefixes{raw: sb.Path, panelHost: set.PanelDomain}
+	if sb.Domain != "" && sb.Domain != set.PanelDomain {
+		p.subHost = sb.Domain
+	}
 	if sb.Formats.ClashEnable {
 		p.clash = sb.Formats.ClashPath
 	}
@@ -94,8 +99,31 @@ func (s *Server) withSubRoute(next http.Handler) http.Handler {
 				}
 			}
 		}
+		// On the domain made for subscriptions nothing of the panel is served: no login page, no API, only what a
+		// subscriber's page and app need.
+		if p := s.prefixes(r); p.subHost != "" && hostOnly(r.Host) == p.subHost && !subHostAllowed(r) {
+			http.NotFound(w, r)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// hostOnly is the host of a request without the port, in lower case.
+func hostOnly(h string) string {
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = host
+	}
+	return strings.ToLower(strings.TrimSuffix(h, "."))
+}
+
+// subHostAllowed says what may be asked of the subscription domain besides the subscription addresses themselves.
+func subHostAllowed(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	p := r.URL.Path
+	return p == "/api/health" || p == "/api/sub-preview" || strings.HasPrefix(p, "/api/sub/") || strings.HasPrefix(p, "/api/theme-assets/") || strings.HasPrefix(p, "/assets/")
 }
 
 func (s *Server) subRateLimited(w http.ResponseWriter, r *http.Request) bool {
@@ -248,6 +276,10 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request, k kind) {
 		h.Set(key, v)
 	}
 	// Routing, Hide-Settings and the headers of the app that is asking (Happ, INCY); see sub.ExtraHeaders.
+	// Happ moves its saved address to the new domain when told to, so the clients need no new link.
+	if set.MoveToDomain && set.Domain != "" && sub.IsHapp(ua) && hostOnly(r.Host) != set.Domain {
+		h.Set("new-domain", set.Domain)
+	}
 	// With connections that have their own routing the whole routing is in the JSON configs: the app's global profile in the
 	// header or the body would be laid over it, so it is not sent.
 	hdr := set
